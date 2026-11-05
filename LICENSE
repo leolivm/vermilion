@@ -1,0 +1,41 @@
+# Vermilion — licenses
+
+Vermilion combines code under several licenses. Each part below names its license; the full texts are in
+[`LICENSES/`](LICENSES). [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) lists every third-party source with its
+notice, and [`CREDITS.md`](CREDITS.md) says what was taken from each project.
+
+**Summary: source-available, with noncommercial parts.** The kext `VermilionAccel` (formerly `PhxAccel`) and the Metal plugin are derived from
+NullMoth's driver and may only be used for noncommercial purposes (PolyForm Noncommercial 1.0.0). Everything written
+for Vermilion is MIT.
+
+| Part | License |
+|---|---|
+| Code written for Vermilion: `src/phxbringup` (except the files in the next row), `src/phxdec`, `src/phxva`, `tools/phxctl` (except the rows below), `tools/firmware`, `scripts/`, `tests/`, `docs/` | MIT, Copyright (c) 2026 Vermilion contributors ([`LICENSES/MIT.txt`](LICENSES/MIT.txt)) |
+| Files derived from nullarc: `src/phxbringup/PhxBringup.cpp`, `PhxNativeABI.h`, `build.sh`, `kmod_info.c`, `Info.plist`; `tools/phxctl/phxctl.c`, `mesboot.c`, `relocate_gpubundle.sh` | nullarc's terms: MIT, Copyright (c) 2026 luuumi-dev and the nullarc contributors ([`LICENSES/MIT-nullarc.txt`](LICENSES/MIT-nullarc.txt)), or at your option GPL-2.0-only ([`LICENSES/GPL-2.0-only.txt`](LICENSES/GPL-2.0-only.txt)); Vermilion's changes to them are MIT ([`LICENSES/MIT.txt`](LICENSES/MIT.txt)) |
+| `src/phxbringup/PhxNativeABI.h` user-client layouts and `phx_psp_smu.cpp` PSP ring method, after Cobalt64's `navi48-bringup` | additionally BSD-3-Clause, Copyright (c) 2026 the Navi48 project ([`LICENSES/BSD-3-Clause-navi48-bringup.txt`](LICENSES/BSD-3-Clause-navi48-bringup.txt)) |
+| `src/phxaccel`, `src/nmplugin` — derived from NullMoth's macOS driver (via nullarc) | **PolyForm Noncommercial 1.0.0** ([`LICENSES/PolyForm-Noncommercial-1.0.0.txt`](LICENSES/PolyForm-Noncommercial-1.0.0.txt), also `src/phxaccel/LICENSE.PolyForm-NC`) |
+| Register definitions, message numbers and algorithms ported from Linux `amdgpu` / DC (`src/phxbringup/phx_regs_dcn32.h`, `PhxGamma.h`, `PhxVbios.h`, `PhxDdc.h`, `PhxHpd.h`, `PhxPipe0.h`, `PhxPipe2.h`, `phx_*_plan_*.inc`, `phx_psp_smu.cpp`, `phx_vm.cpp`); files taken from Linux (`tools/phxctl/mes_v11_api_def.h`, `tools/phxctl/csb_gfx11.h`) | MIT, Copyright Advanced Micro Devices, Inc. ([`LICENSES/MIT-AMD.txt`](LICENSES/MIT-AMD.txt); the notice is also at the top of each file taken from Linux) |
+| `src/translator` — the shader translator `libnvmtl_translate.dylib`: NullMoth's copy of metal2vulkan (`translator/`, unmodified) and its C-ABI wrapper with Vermilion's changes (`wrapper/`) | **LGPL-3.0-or-later** ([`LICENSES/LGPL-3.0-or-later.txt`](LICENSES/LGPL-3.0-or-later.txt), which builds on [`LICENSES/GPL-3.0-only.txt`](LICENSES/GPL-3.0-only.txt); also `src/translator/LICENSE` and `COPYING`). Vermilion's changes to the wrapper are under the same license |
+| `patches/mesa` (RADV Darwin backend and changes) | MIT, as Mesa; patches 0001-0009 are Cobalt64's (MIT, [`LICENSES/MIT-Cobalt64.txt`](LICENSES/MIT-Cobalt64.txt)) |
+| `patches/ffmpeg` | LGPL-2.1-or-later, as FFmpeg ([`LICENSES/LGPL-2.1-or-later.txt`](LICENSES/LGPL-2.1-or-later.txt)) |
+
+## PolyForm Noncommercial
+
+The parts derived from NullMoth may be used, changed and shared **for noncommercial purposes only**. Anyone who
+receives them must also receive the license terms and this line, which the licensor provided with the software:
+
+```
+Required Notice: Copyright (c) 2026 NullMoth Systems (https://nullmothsystems.com)
+```
+
+## Not in this repository
+
+- **AMD GPU microcode.** The bring-up loads linux-firmware `amdgpu/` files; they are AMD's, under
+  [`LICENSES/LICENSE.amdgpu.txt`](LICENSES/LICENSE.amdgpu.txt) (binary redistribution only, no reverse engineering).
+  This repository ships no firmware and no firmware excerpt: `tools/firmware/fetch_firmware.sh` downloads the files and
+  `tools/firmware/c3_image.py` generates the one header VermilionBoot.kext builds from them, on your machine
+  ([`docs/FIRMWARE.md`](docs/FIRMWARE.md)).
+- **Apple software.** Nothing from macOS or Xcode is redistributed. The kexts build against MacKernelSDK (APSL 2.0),
+  which you download yourself.
+- **The nullarc name, mark and wordmark** (© luuumi-dev, all rights reserved) are not used by this project, and
+  neither are NullMoth's.

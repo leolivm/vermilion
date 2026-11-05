@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Vermilion contributors <vermilion@example.invalid>
+Date: Wed, 4 Nov 2026 00:00:00 +0000
+Subject: [PATCH] hevc/vulkan: changes for the phxdec decoder
+
+Patch on FFmpeg n7.1 (b08d7969c550a804a59511c7b83f2dd8cc0499b8) used by the
+libavcodec_phx / libavutil_phx libraries that src/phxdec links.
+---
+diff --git a/libavcodec/hevc/hevcdec.c b/libavcodec/hevc/hevcdec.c
+index 0dc24f8..5a984ac 100644
+--- a/libavcodec/hevc/hevcdec.c
++++ b/libavcodec/hevc/hevcdec.c
+@@ -3414,6 +3414,14 @@ static int hevc_frame_end(HEVCContext *s, HEVCLayerContext *l)
+     av_log(s->avctx, AV_LOG_DEBUG, "Decoded frame with POC %zu/%d.\n",
+            l - s->layers, s->poc);
+ 
++    /* PHX (hackintosh WP6): with AV_CODEC_FLAG_LOW_DELAY every picture is output as soon as it is decoded, in
++     * decode order, as a VideoToolbox decoder must emit one frame per sample before DecodeFrame returns. */
++    if (s->avctx->flags & AV_CODEC_FLAG_LOW_DELAY) {
++        ret = ff_hevc_output_frames(s, s->layers_active_decode, s->layers_active_output, 0, 0, 0);
++        if (ret < 0)
++            return ret;
++    }
++
+     return 0;
+ }
+ 
+diff --git a/libavcodec/vulkan_video.c b/libavcodec/vulkan_video.c
+index 3a04d60..484b3eb 100644
+--- a/libavcodec/vulkan_video.c
++++ b/libavcodec/vulkan_video.c
+@@ -339,17 +339,21 @@ av_cold void ff_vk_video_common_uninit(FFVulkanContext *s,
+ 
+     av_freep(&common->mem);
+ 
+-    if (common->layered_view)
++    if (common->layered_view) {
+         vk->DestroyImageView(s->hwctx->act_dev, common->layered_view,
+                              s->hwctx->alloc);
++        common->layered_view = VK_NULL_HANDLE;
++    }
+ 
+     av_frame_free(&common->layered_frame);
+ 
+     av_buffer_unref(&common->dpb_hwfc_ref);
+ 
+-    if (common->yuv_sampler)
++    if (common->yuv_sampler) {
+         vk->DestroySamplerYcbcrConversion(s->hwctx->act_dev, common->yuv_sampler,
+                                           s->hwctx->alloc);
++        common->yuv_sampler = VK_NULL_HANDLE;
++    }
+ }
+ 
+ av_cold int ff_vk_video_common_init(AVCodecContext *avctx, FFVulkanContext *s,
+diff --git a/libavutil/hwcontext_vulkan.c b/libavutil/hwcontext_vulkan.c
+index 6317ab7..5c59ffb 100644
+--- a/libavutil/hwcontext_vulkan.c
++++ b/libavutil/hwcontext_vulkan.c
+@@ -394,6 +394,22 @@ static int load_libvulkan(AVHWDeviceContext *ctx)
+ #endif
+     };
+ 
++    /* PHX (hackintosh WP6): FFPHX_VK_ICD names a Vulkan ICD (e.g. our RADV) to use directly, without a loader, as the
++     * Metal plugin does in the same process; its vk_icdGetInstanceProcAddr answers the global entry points too. */
++    const char *icd = getenv("FFPHX_VK_ICD");
++    if (icd && *icd) {
++        p->libvulkan = dlopen(icd, RTLD_NOW | RTLD_LOCAL);
++        if (p->libvulkan) {
++            hwctx->get_proc_addr = (PFN_vkGetInstanceProcAddr)dlsym(p->libvulkan, "vk_icdGetInstanceProcAddr");
++            if (hwctx->get_proc_addr)
++                return 0;
++            dlclose(p->libvulkan);
++            p->libvulkan = NULL;
++        }
++        av_log(ctx, AV_LOG_ERROR, "FFPHX_VK_ICD %s: no vk_icdGetInstanceProcAddr\n", icd);
++        return AVERROR_UNKNOWN;
++    }
++
+     for (int i = 0; i < FF_ARRAY_ELEMS(lib_names); i++) {
+         p->libvulkan = dlopen(lib_names[i], RTLD_NOW | RTLD_LOCAL);
+         if (p->libvulkan)

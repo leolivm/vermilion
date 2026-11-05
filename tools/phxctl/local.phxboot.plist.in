@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template of the LaunchDaemon /Library/LaunchDaemons/local.phxboot.plist. Replace @PHX_ROOT@ with the absolute
+     install dir (the desktop user's ~/gpu) and @PHX_USER@ with that user's short name; docs/INSTALL.md. -->
+<plist version="1.0"><dict>
+<key>Label</key><string>local.phxboot</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>@PHX_ROOT@/phxboot-navi31.sh</string></array>
+<key>EnvironmentVariables</key><dict><key>PHX_USER</key><string>@PHX_USER@</string></dict>
+<key>RunAtLoad</key><true/><key>LaunchOnlyOnce</key><true/>
+</dict></plist>

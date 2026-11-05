@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300">
+  <g transform="translate(22,22) scale(0.5)">  <rect width="512" height="512" rx="112" fill="#17100f"/>
+  <polygon points="104,128 212,128 256,288 256,400" fill="#e34234"/>
+  <polygon points="408,128 300,128 256,288 256,400" fill="#a92a1c"/>
+  <rect x="176" y="424" width="160" height="12" rx="6" fill="#e34234"/>
+</g>
+  <text x="320" y="166" font-family="-apple-system, BlinkMacSystemFont, Inter, Helvetica Neue, Arial, sans-serif" font-size="124" font-weight="600" letter-spacing="-2" fill="#f3ebe8">Vermilion</text>
+  <text x="324" y="222" font-family="-apple-system, BlinkMacSystemFont, Inter, Helvetica Neue, Arial, sans-serif" font-size="32" font-weight="400" fill="#b9a09a">RX 7900 XT acceleration for macOS</text>
+</svg>

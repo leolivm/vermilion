@@ -1,0 +1,27 @@
+# Defence in depth on top of the whitelist copy (security audit 2026-11-04, repo B)
+*.rom
+*.edid.bin
+*.kc
+*.MOV
+*.mov
+*.heic
+config*.plist
+!src/**/Info.plist
+opencore-*.txt
+*.tgz
+*.zip
+.DS_Store
+._*
+/build/
+src/**/build/
+*.dylib
+*.kext/
+# Local build inputs that must never be committed: AMD firmware and the header generated from it
+*.bin
+src/phxbringup/phx_c3_image.inc
+*.o
+*.bundle/
+*.dSYM/
+__pycache__/
+target/
+*.pyc

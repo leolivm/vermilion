@@ -1,0 +1,24 @@
+# fw.lock: the linux-firmware amdgpu/ files the Navi 31 bring-up loads, with the md5 of the revision the box
+# scripts were validated with (tools/phxctl/bringup_navi31.sh, vcn_up.sh). fetch_firmware.sh refuses any other revision.
+# The linux-firmware commit those revisions came from is not recorded yet (TODO: pin it).
+# <file> <md5> <bytes>
+dcn_3_2_0_dmcub.bin 6a06c16a77e84fe22e91c9d2e6220476 284432
+gc_11_0_0_imu.bin f57b77879159d1c3f25083f501a821eb 132352
+gc_11_0_0_imu_kicker.bin e0b3a110570ef4ef63284572458a096b 132352
+gc_11_0_0_me.bin 22a746ed47cf44836aa32fc3837fd666 314512
+gc_11_0_0_mec.bin 4b358b7270818e95ce3ad36ad647173b 406528
+gc_11_0_0_mes.bin e03b3f5201389dcd7e65f7bcabe90fe7 286336
+gc_11_0_0_mes1.bin 0e8a562095bcc6787a11ce564c216b69 218240
+gc_11_0_0_mes_2.bin b865dc0966459d7d156e0f421d333750 257344
+gc_11_0_0_pfp.bin ae392d606697cbe8e0084a57ee720563 231008
+gc_11_0_0_rlc.bin 281b8319edd38e1ba2a4902ee8ea6cd8 185376
+gc_11_0_0_rlc_1.bin 70bf3aa5afecb84f8818727e49e06ef0 185248
+gc_11_0_0_rlc_kicker.bin d25638c2ed2eeb634de7f323d2ebeab2 185376
+psp_13_0_0_sos.bin cdf9da6c2212d30c04f1b56722ee9904 268304
+psp_13_0_0_sos_kicker.bin e4d6384e222e79e5793cf89bbe06bd9a 268976
+psp_13_0_0_ta.bin 19758636f3f23f51289e5bedb3522d5e 263424
+psp_13_0_0_ta_kicker.bin bab11c3be3defa7471a600e89544ecfb 259328
+sdma_6_0_0.bin 9e2efc0c3f06932cdf15b49e6645ef09 34560
+smu_13_0_0.bin e03d47119f712a80619a656766d9c8d8 292452
+smu_13_0_0_kicker.bin ae5ea21b888e62eccb91b344c04a50db 261888
+vcn_4_0_0.bin cfe244431aaaa120bee275c95af658f9 403856

@@ -1,0 +1,16 @@
+Vermilion
+Copyright (c) 2026 Vermilion contributors
+
+This product includes software derived from NullMoth's macOS driver, used under the
+PolyForm Noncommercial License 1.0.0 (LICENSES/PolyForm-Noncommercial-1.0.0.txt):
+Required Notice: Copyright (c) 2026 NullMoth Systems (https://nullmothsystems.com)
+
+This product includes software from nullarc, Copyright (c) 2026 luuumi-dev and the nullarc
+contributors (MIT, LICENSES/MIT-nullarc.txt; or GPL-2.0-only at your option).
+
+This product includes material from Linux amdgpu, Copyright Advanced Micro Devices, Inc. (MIT),
+Cobalt64 / Navi48-MacOS (MIT; navi48-bringup BSD-3-Clause), RX4Darwin (BSD-3-Clause), RedNavi
+(BSD-3-Clause), Mesa (MIT) and FFmpeg (LGPL-2.1-or-later). See THIRD_PARTY_NOTICES.md.
+
+Vermilion is independent and unofficial. It is not affiliated with, reviewed, endorsed or
+supported by NullMoth Systems, luuumi-dev, AMD, Apple or any other project named here.

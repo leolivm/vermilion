@@ -1,0 +1,470 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Vermilion contributors <vermilion@example.invalid>
+Date: Wed, 4 Nov 2026 00:00:00 +0000
+Subject: [PATCH 17/17] radv/darwin: navi31 shim changes on top of 0016
+
+The uncommitted Darwin shim changes the 2026-11-04 RADV build carries
+(scanout, kext connection, sync, disk cache path), exported as one patch.
+---
+diff --git a/include/darwin/navi48_native_abi.h b/include/darwin/navi48_native_abi.h
+index 74b4468f..0ca139d5 100644
+--- a/include/darwin/navi48_native_abi.h
++++ b/include/darwin/navi48_native_abi.h
+@@ -192,6 +192,7 @@ struct n48n_info {                 /* 192 B */
+ };
+ #define N48N_INFO_HUNG          (1u << 0)
+ #define N48N_INFO_S1B_POSITIVE  (1u << 1)
++#define N48N_INFO_VCN (1u << 3)
+ #define N48N_INFO_NATIVE_BOOT   (1u << 2)
+ /* ABI 1.10 (kext 0.0.640): n48n_info.reserved[] words (an older kext leaves them 0, which reads as "no budget reported").
+  *   reserved[0],[1] = native write counter (diagnostic)   reserved[2] = ABI minor (1.1)
+diff --git a/src/amd/common/ac_gpu_info.c b/src/amd/common/ac_gpu_info.c
+index d734cf51..132a5058 100644
+--- a/src/amd/common/ac_gpu_info.c
++++ b/src/amd/common/ac_gpu_info.c
+@@ -15,6 +15,7 @@
+ #include "amd_family.h"
+ #include "amdgfxregs.h"
+ #include "util/macros.h"
++#include <stdlib.h>
+ #include "util/u_math.h"
+ #include "util/os_misc.h"
+ #include "util/format/u_format.h"
+@@ -1640,6 +1641,13 @@ ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
+     */
+    info->discardable_allows_big_page = info->gfx_level >= GFX10_3 && info->gfx_level < GFX12 &&
+                                        info->has_dedicated_vram;
++#ifdef __APPLE__
++   /* PhxBringup backs every BO, VRAM included, with scattered 4 KiB system pages and maps them without PTE fragments,
++    * so the GFX11 attribute ring must not be declared BIG_PAGE: the SPI would translate it as 64 KiB+ fragments and
++    * read other waves' varyings (garbled CoreAnimation text, 2026-10-26). RADV_BIG_PAGE=1 turns it back on. */
++   if (!(getenv("RADV_BIG_PAGE") && getenv("RADV_BIG_PAGE")[0] == '1'))
++      info->discardable_allows_big_page = false;
++#endif
+ 
+    /* Compute the scratch WAVESIZE granularity in bytes. */
+    info->scratch_wavesize_granularity_shift = info->gfx_level >= GFX11 ? 8 : 10;
+diff --git a/src/amd/common/darwin/ac_darwin_drm.c b/src/amd/common/darwin/ac_darwin_drm.c
+index d377ebbd..0577685d 100644
+--- a/src/amd/common/darwin/ac_darwin_drm.c
++++ b/src/amd/common/darwin/ac_darwin_drm.c
+@@ -9,6 +9,7 @@
+ #include "ac_darwin_budget.h"
+ 
+ #include <errno.h>
++#include <os/log.h>
+ #include <pthread.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -17,6 +18,7 @@
+ #include "common/amd_family.h"
+ #include "common/amdgpu_devices.h"
+ #include "util/macros.h"
++#include "util/u_atomic.h"
+ #include "util/u_math.h"
+ #include "util/u_sync_provider.h"
+ #include "drm-uapi/drm.h"
+@@ -26,6 +28,15 @@
+ #define ACD_DRM_MAJOR AC_AMDGPU_DRM_MAJOR
+ #define ACD_DRM_MINOR AC_AMDGPU_DRM_MINOR
+ 
++static void
++acd_fail(const char *what, uint32_t handle, uint64_t size, uint64_t flags, int r)
++{
++   static int n;
++   if (p_atomic_inc_return(&n) <= 64)
++      os_log_error(OS_LOG_DEFAULT, "radv-darwin: %{public}s %{public}s failed: handle %u size %llu flags 0x%llx -> %d",
++                   getprogname(), what, handle, (unsigned long long)size, (unsigned long long)flags, r);
++}
++
+ /* amdgpu.ids: 7550,C0 */
+ #define ACD_MARKETING_NAME "AMD Radeon RX 9070 XT"
+ 
+@@ -61,6 +72,7 @@ struct acd_core {
+    int refcount;
+    uint32_t minor; /* ABI minor the kernel reported */
+    bool shared; /* the process-wide core (false: the private HOST_BO stand-in core) */
++   bool used_vcn;
+    struct acd_kext *kext; /* NULL in the HOST_BO stand-in */
+    struct amdgpu_va_manager *va_mgr;
+    struct util_sync_provider *sync; /* master; every device holds a clone */
+@@ -391,8 +403,11 @@ acd_va_range_alloc(acd_device_handle dev, enum amdgpu_gpu_va_range va_range_type
+                    uint64_t va_base_alignment, uint64_t va_base_required, uint64_t *va_base_allocated,
+                    amdgpu_va_handle *va_range_handle, uint64_t flags)
+ {
+-   return amdgpu_va_range_alloc2(dev->core->va_mgr, va_range_type, size, va_base_alignment, va_base_required,
+-                                 va_base_allocated, va_range_handle, flags);
++   int r = amdgpu_va_range_alloc2(dev->core->va_mgr, va_range_type, size, va_base_alignment, va_base_required,
++                                  va_base_allocated, va_range_handle, flags);
++   if (r)
++      acd_fail("va range alloc", 0, size, flags, r);
++   return r;
+ }
+ 
+ int
+@@ -473,6 +488,44 @@ acd_info_memory(struct acd_device *dev, const struct drm_amdgpu_info *info, void
+    return 0;
+ }
+ 
++static bool
++acd_vcn(const struct acd_device *dev)
++{
++   if (!dev->core->kext || strcmp(dev->canned->name, "navi31_xt"))
++      return false;
++   if (env_is_1("RADV_DARWIN_VCN"))
++      return true;
++   if (getenv("RADV_DARWIN_VCN"))
++      return false;
++   struct n48n_info k;
++   return !acd_kext_query_info(dev->core->kext, &k) && (k.flags & N48N_INFO_VCN);
++}
++
++static int
++acd_info_video_caps(const struct drm_amdgpu_info *info, void *out)
++{
++   struct drm_amdgpu_info_video_caps *caps = out;
++   memset(caps, 0, sizeof(*caps));
++   if (info->video_cap.type != AMDGPU_INFO_VIDEO_CAPS_DECODE)
++      return 0;
++   static const uint32_t dec[][4] = {
++      {AMDGPU_INFO_VIDEO_CAPS_CODEC_IDX_MPEG4_AVC, 4096, 4096, 52},
++      {AMDGPU_INFO_VIDEO_CAPS_CODEC_IDX_HEVC, 8192, 4352, 186},
++      {AMDGPU_INFO_VIDEO_CAPS_CODEC_IDX_JPEG, 16384, 16384, 0},
++      {AMDGPU_INFO_VIDEO_CAPS_CODEC_IDX_VP9, 8192, 4352, 0},
++      {AMDGPU_INFO_VIDEO_CAPS_CODEC_IDX_AV1, 8192, 4352, 0},
++   };
++   for (unsigned i = 0; i < ARRAY_SIZE(dec); i++) {
++      struct drm_amdgpu_info_video_codec_info *c = &caps->codec_info[dec[i][0]];
++      c->valid = 1;
++      c->max_width = dec[i][1];
++      c->max_height = dec[i][2];
++      c->max_pixels_per_frame = dec[i][1] * dec[i][2];
++      c->max_level = dec[i][3];
++   }
++   return 0;
++}
++
+ static int
+ acd_info(struct acd_device *dev, const struct drm_amdgpu_info *info)
+ {
+@@ -488,6 +541,15 @@ acd_info(struct acd_device *dev, const struct drm_amdgpu_info *info)
+          *(struct drm_amdgpu_info_hw_ip *)out = d->hw_ip_gfx;
+       else if (info->query_hw_ip.type == AMDGPU_HW_IP_COMPUTE)
+          *(struct drm_amdgpu_info_hw_ip *)out = d->hw_ip_compute;
++      else if (info->query_hw_ip.type == AMDGPU_HW_IP_VCN_ENC && acd_vcn(dev))
++         *(struct drm_amdgpu_info_hw_ip *)out = (struct drm_amdgpu_info_hw_ip){
++            .hw_ip_version_major = 4,
++            .hw_ip_version_minor = 0,
++            .ib_start_alignment = 256,
++            .ib_size_alignment = 4,
++            .available_rings = 1,
++            .ip_discovery_version = 0x040000,
++         };
+       return 0;
+    case AMDGPU_INFO_HW_IP_COUNT:
+       *(uint32_t *)out = 1;
+@@ -499,6 +561,8 @@ acd_info(struct acd_device *dev, const struct drm_amdgpu_info *info)
+          *(struct drm_amdgpu_info_firmware *)out = d->fw_gfx_pfp;
+       else if (info->query_fw.fw_type == AMDGPU_INFO_FW_GFX_MEC)
+          *(struct drm_amdgpu_info_firmware *)out = d->fw_gfx_mec;
++      else if (info->query_fw.fw_type == AMDGPU_INFO_FW_VCN)
++         *(struct drm_amdgpu_info_firmware *)out = (struct drm_amdgpu_info_firmware){.ver = 0x09118016};
+       return 0;
+    case AMDGPU_INFO_READ_MMR_REG:
+       info_read_mmr_reg(d, info->read_mmr_reg.dword_offset, info->read_mmr_reg.count,
+@@ -536,7 +600,9 @@ acd_info(struct acd_device *dev, const struct drm_amdgpu_info *info)
+          return acd_info_memory(dev, info, out);
+       return -EINVAL;
+    case AMDGPU_INFO_VIDEO_CAPS:
+-      return 0;
++      if (!acd_vcn(dev))
++         return -EINVAL;
++      return acd_info_video_caps(info, out);
+    case AMDGPU_INFO_TIMESTAMP: {
+       /* the GPU clock VK_EXT_calibrated_timestamps pairs with the host clock: upper, lower, upper again (the lower
+        * half wraps every 43 s) */
+@@ -586,8 +652,10 @@ acd_cmd_gem_va(struct acd_device *dev, struct drm_amdgpu_gem_va *va)
+    uint64_t point = va->vm_timeline_point;
+ 
+    int r = acd_kext_gem_va(dev->core->kext, va);
+-   if (r)
++   if (r) {
++      acd_fail(va->operation == AMDGPU_VA_OP_MAP ? "gem va map" : "gem va op", va->handle, va->map_size, va->flags, r);
+       return r;
++   }
+    /* MAP/UNMAP are synchronous in the kernel: the timeline point is already complete. */
+    if (out_handle && dev->sync->timeline_signal(dev->sync, &out_handle, &point, 1))
+       return -errno;
+@@ -607,8 +675,22 @@ acd_cmd_cs(struct acd_device *dev, union drm_amdgpu_cs *cs)
+ 
+    /* SYNCOBJ_IN / TIMELINE_WAIT: a point backed by a seqno of this client is already ordered on
+     * the one ring; a CPU-signalled one is done; one not yet submitted is waited for on the CPU. */
+-   for (uint32_t i = 0; i < plan.n_waits && !r; i++)
+-      r = acd_sync_cs_wait_ready(dev->sync, plan.waits[i].handle, plan.waits[i].point, ACD_CS_DEP_TIMEOUT_NS);
++   bool vcn = false;
++   for (uint32_t i = 0; i < plan.n_ibs; i++)
++      vcn |= plan.ibs[i].ip_type == AMDGPU_HW_IP_VCN_ENC;
++   if (vcn)
++      dev->core->used_vcn = true;
++   for (uint32_t i = 0; i < plan.n_waits && !r; i++) {
++      uint64_t pending = 0;
++      r = acd_sync_cs_wait_ready(dev->sync, plan.waits[i].handle, plan.waits[i].point, ACD_CS_DEP_TIMEOUT_NS, &pending);
++      if (!r && pending && dev->core->used_vcn && dev->core->kext) {
++         bool busy = false;
++         r = acd_kext_wait_deadline(dev->core->kext, pending, acd_kext_now_ns(dev->core->kext) + ACD_CS_DEP_TIMEOUT_NS,
++                                    &busy);
++         if (!r && busy)
++            r = -ETIME;
++      }
++   }
+ 
+    uint64_t seq = 0;
+    if (!r)
+@@ -827,6 +909,7 @@ acd_bo_alloc(acd_device_handle dev, struct amdgpu_bo_alloc_request *req, amdgpu_
+    struct acd_bo_created c;
+    int r = acd_kext_bo_create(dev->core->kext, &b->create, &c);
+    if (r) {
++      acd_fail("bo create", 0, req->alloc_size, req->flags | (req->preferred_heap << 32), r);
+       free(b);
+       return r;
+    }
+@@ -841,7 +924,7 @@ acd_bo_alloc(acd_device_handle dev, struct amdgpu_bo_alloc_request *req, amdgpu_
+       dev->core->bos[c.handle] = b;
+    pthread_mutex_unlock(&dev->core->bo_lock);
+    if (dup) {
+-      fprintf(stderr, "radv-darwin: kext returned BO handle %u twice\n", c.handle);
++      acd_fail("bo handle twice", c.handle, 0, 0, -EIO);
+       free(b);
+       return -EIO;
+    }
+@@ -882,11 +965,11 @@ acd_bo_free(acd_device_handle dev, amdgpu_bo_handle bo)
+       r = acd_kext_bo_unmap(dev->core->kext, bo->handle, bo->cpu);
+       bo->cpu = NULL;
+    }
+-   int r2 = acd_kext_bo_free(dev->core->kext, bo->handle);
+    pthread_mutex_lock(&dev->core->bo_lock);
+    if (dev->core->bos[bo->handle] == bo)
+       dev->core->bos[bo->handle] = NULL;
+    pthread_mutex_unlock(&dev->core->bo_lock);
++   int r2 = acd_kext_bo_free(dev->core->kext, bo->handle);
+    free(bo);
+    return r2 ? r2 : r;
+ }
+@@ -905,6 +988,8 @@ acd_bo_cpu_map(acd_device_handle dev, amdgpu_bo_handle bo, void **cpu)
+       void *addr = NULL;
+       size_t size = 0;
+       r = acd_kext_bo_map(dev->core->kext, bo->handle, &addr, &size);
++      if (r)
++         acd_fail("bo cpu map", bo->handle, bo->size, bo->placed_domain | ((uint64_t)bo->placed_bits << 32), r);
+       if (!r) {
+          bo->cpu = addr;
+          bo->cpu_size = size;
+@@ -970,7 +1055,7 @@ acd_create_bo_from_user_mem(acd_device_handle dev, void *cpu, uint64_t size, amd
+       dev->core->bos[c.handle] = b;
+    pthread_mutex_unlock(&dev->core->bo_lock);
+    if (dup) {
+-      fprintf(stderr, "radv-darwin: kext returned BO handle %u twice\n", c.handle);
++      acd_fail("bo handle twice", c.handle, 0, 0, -EIO);
+       (void)acd_kext_bo_free(dev->core->kext, c.handle);
+       free(b);
+       return -EIO;
+diff --git a/src/amd/common/darwin/ac_darwin_drm.h b/src/amd/common/darwin/ac_darwin_drm.h
+index 1db90147..63da9c46 100644
+--- a/src/amd/common/darwin/ac_darwin_drm.h
++++ b/src/amd/common/darwin/ac_darwin_drm.h
+@@ -76,7 +76,8 @@ struct util_sync_provider *acd_sync_provider_create(const struct acd_sync_backen
+ /* CS path: blocks until (handle, point) is CPU-signalled or attached to a seqno
+  * (WAIT_FOR_SUBMIT semantics); a point backed by a seqno of this client is already
+  * ordered before the next submit and needs no wait. */
+-int acd_sync_cs_wait_ready(struct util_sync_provider *p, uint32_t handle, uint64_t point, uint64_t timeout_ns);
++int acd_sync_cs_wait_ready(struct util_sync_provider *p, uint32_t handle, uint64_t point, uint64_t timeout_ns,
++                           uint64_t *pending_seq);
+ /* CS path: attaches the returned seqno to (handle, point); point 0 = binary payload. */
+ int acd_sync_cs_attach(struct util_sync_provider *p, uint32_t handle, uint64_t point, uint64_t seq);
+ 
+diff --git a/src/amd/common/darwin/ac_darwin_kext.c b/src/amd/common/darwin/ac_darwin_kext.c
+index bdac1352..88b75004 100644
+--- a/src/amd/common/darwin/ac_darwin_kext.c
++++ b/src/amd/common/darwin/ac_darwin_kext.c
+@@ -477,7 +477,7 @@ acd_cs_plan_init(struct acd_cs_plan *plan, uint32_t ctx_id, uint32_t bo_list_han
+             .ib_bytes = ib->ib_bytes,
+             .ip_type = ib->ip_type,
+             .ip_instance = ib->ip_instance,
+-            .ring = ib->ring,
++            .ring = 0,
+          };
+          break;
+       }
+@@ -549,6 +549,14 @@ acd_kext_submit(struct acd_kext *k, const struct acd_cs_plan *plan, uint64_t *la
+ 
+       uint64_t sout[1] = {0};
+       uint32_t nout = 1;
++      if (trace_enabled()) {
++         for (uint32_t i = 0; i < n; i++) {
++            const struct n48n_cs_ib *t = plan->ibs + off + i;
++            fprintf(stderr, "radv-darwin: trace ib %u/%u ip %u inst %u ring %u flags 0x%x va 0x%llx bytes %u fence %u\n", i,
++                    n, t->ip_type, t->ip_instance, t->ring, t->flags, (unsigned long long)t->va_start, t->ib_bytes,
++                    hdr.flags);
++         }
++      }
+       acd_sfence();
+       int r = kcall(k, ACD_SEL_SUBMIT, NULL, 0, buf, sizeof(hdr) + n * sizeof(struct n48n_cs_ib), sout, &nout,
+                     NULL, NULL);
+@@ -613,6 +621,20 @@ acd_kext_call(struct acd_kext *k, uint32_t sel, const uint64_t *sin, uint32_t ns
+    return kcall(k, sel, sin, nsin, stin, stinsz, sout, nsout, stout, stoutsz);
+ }
+ 
++int
++acd_kext_surf_gpu_mark(struct acd_kext *k, uint32_t surface_id, uint32_t plane, uint32_t *status)
++{
++   const uint64_t sin[2] = {surface_id, plane};
++   uint64_t sout[1] = {0};
++   uint32_t nout = 1;
++   int r = kcall(k, ACD_SEL_SURF_GPU_MARK, sin, 2, NULL, 0, sout, &nout, NULL, NULL);
++   if (!r && nout < 1)
++      r = -EIO;
++   if (!r)
++      *status = (uint32_t)sout[0];
++   return r;
++}
++
+ /* ---- ABI 1.1 scanout ---- */
+ 
+ int
+diff --git a/src/amd/common/darwin/ac_darwin_kext.h b/src/amd/common/darwin/ac_darwin_kext.h
+index eee3a5ca..b5c68326 100644
+--- a/src/amd/common/darwin/ac_darwin_kext.h
++++ b/src/amd/common/darwin/ac_darwin_kext.h
+@@ -48,6 +48,7 @@ enum acd_sel {
+    ACD_SEL_SCANX_PRESENT = 24,
+    ACD_SEL_SCANX_STATUS = 25,
+    ACD_SEL_SCANX_RELEASE = 26,
++   ACD_SEL_SURF_GPU_MARK = 30,
+ };
+ 
+ /* The first ABI minor with selectors 22..26 (the monitor B's scanout, M6 Stage 1b). */
+@@ -214,6 +215,7 @@ int acd_kext_scan_release(struct acd_kext *k, uint64_t out[2]);
+  * (the instance, the latches, the session). Same argument conventions as kcall. */
+ int acd_kext_call(struct acd_kext *k, uint32_t sel, const uint64_t *sin, uint32_t nsin, const void *stin, size_t stinsz,
+                   uint64_t *sout, uint32_t *nsout, void *stout, size_t *stoutsz);
++int acd_kext_surf_gpu_mark(struct acd_kext *k, uint32_t surface_id, uint32_t plane, uint32_t *status);
+ 
+ uint64_t acd_kext_now_ns(struct acd_kext *k);
+ 
+diff --git a/src/amd/common/darwin/ac_darwin_sync.c b/src/amd/common/darwin/ac_darwin_sync.c
+index 4f0dc18c..002cd574 100644
+--- a/src/amd/common/darwin/ac_darwin_sync.c
++++ b/src/amd/common/darwin/ac_darwin_sync.c
+@@ -481,9 +481,11 @@ sync_clone(struct util_sync_provider *p)
+ /* ---- called by the CS path (ac_darwin_drm.c) ---- */
+ 
+ int
+-acd_sync_cs_wait_ready(struct util_sync_provider *p, uint32_t handle, uint64_t point, uint64_t timeout_ns)
++acd_sync_cs_wait_ready(struct util_sync_provider *p, uint32_t handle, uint64_t point, uint64_t timeout_ns,
++                       uint64_t *pending_seq)
+ {
+    struct acd_sync *s = to_sync(p);
++   *pending_seq = 0;
+    const uint64_t deadline = now_mono_ns() + timeout_ns;
+ 
+    pthread_mutex_lock(&s->mtx);
+@@ -495,7 +497,10 @@ acd_sync_cs_wait_ready(struct util_sync_provider *p, uint32_t handle, uint64_t p
+       }
+       uint64_t seq;
+       /* DONE, or pending on a seqno of this client: already ordered before the new submit. */
+-      if (point_state(s, o, point, &seq) != P_UNSUBMITTED) {
++      const enum pstate st = point_state(s, o, point, &seq);
++      if (st != P_UNSUBMITTED) {
++         if (st == P_PENDING)
++            *pending_seq = seq;
+          pthread_mutex_unlock(&s->mtx);
+          return 0;
+       }
+diff --git a/src/amd/vulkan/radv_cmd_buffer.c b/src/amd/vulkan/radv_cmd_buffer.c
+index 1ae3241c..f4d8df59 100644
+--- a/src/amd/vulkan/radv_cmd_buffer.c
++++ b/src/amd/vulkan/radv_cmd_buffer.c
+@@ -1401,12 +1401,6 @@ radv_create_cmd_buffer(struct vk_command_pool *pool, VkCommandBufferLevel level,
+       list_inithead(&cmd_buffer->upload.list);
+ 
+       radv_cmd_buffer_init_shader_part_cache(device, cmd_buffer);
+-      result =
+-         radv_create_cmd_stream(device, ip, cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_SECONDARY, &cmd_buffer->cs);
+-      if (result != VK_SUCCESS) {
+-         radv_destroy_cmd_buffer(&cmd_buffer->vk);
+-         return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+-      }
+ 
+       for (unsigned i = 0; i < MAX_BIND_POINTS; i++)
+          vk_object_base_init(&device->vk, &cmd_buffer->descriptors[i].push_set.set.base, VK_OBJECT_TYPE_DESCRIPTOR_SET);
+@@ -1414,6 +1408,13 @@ radv_create_cmd_buffer(struct vk_command_pool *pool, VkCommandBufferLevel level,
+       cmd_buffer->accel_struct_buffers = _mesa_pointer_set_create(NULL);
+       cmd_buffer->ray_history = UTIL_DYNARRAY_INIT;
+       list_inithead(&cmd_buffer->msrtss_transients);
++
++      result =
++         radv_create_cmd_stream(device, ip, cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_SECONDARY, &cmd_buffer->cs);
++      if (result != VK_SUCCESS) {
++         radv_destroy_cmd_buffer(&cmd_buffer->vk);
++         return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
++      }
+    }
+ 
+    if (device->utrace.context) {
+diff --git a/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.c b/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.c
+index 4d77a6f1..09a2d3e6 100644
+--- a/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.c
++++ b/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.c
+@@ -42,6 +42,20 @@ scanx_kext(VkDevice _dev)
+ 
+ /* ABI 1.11 (Navi48 M6 Stage 1b): the instance-2 (monitor B) scanout selectors 22..26 on the SAME N48N connection. A thin passthrough: any other selector is -EPERM
+  * (this is not a general escape hatch), a kernel older than ABI 1.11 is -ENOSYS (the caller keeps instance 2 OFF). The kernel refuses everything else. */
++API uint32_t
++nvmtl_nvk_surface_dirty(VkDevice dev, uint32_t surface_id, uint32_t plane)
++{
++   if (!(plane & 0x80000000u))
++      return 0x80000002u;
++   struct acd_kext *k = scan_kext(dev);
++   if (!k)
++      return 0x80000002u;
++   uint32_t status = 0x80000002u;
++   if (acd_kext_surf_gpu_mark(k, surface_id, plane, &status))
++      return 0x80000002u;
++   return status;
++}
++
+ API int
+ radv_darwin_n48n_call(VkDevice dev, uint32_t sel, const uint64_t *sin, uint32_t nsin, const void *stin, size_t stinsz,
+                       uint64_t *sout, uint32_t *nsout, void *stout, size_t *stoutsz)
+diff --git a/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.h b/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.h
+index 4ec17562..aa2fbf47 100644
+--- a/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.h
++++ b/src/amd/vulkan/winsys/amdgpu/radv_darwin_scanout.h
+@@ -31,6 +31,8 @@ int radv_darwin_scanout_status(VkDevice dev, struct n48n_scan_status *st);
+ /* Restores the console; out[0] = restore verified, [1] plane MC after (out may be NULL). Idempotent. */
+ int radv_darwin_scanout_release(VkDevice dev, uint64_t out[2]);
+ 
++uint32_t nvmtl_nvk_surface_dirty(VkDevice dev, uint32_t surface_id, uint32_t plane);
++
+ /* ABI 1.11 (Navi48 M6 Stage 1b): the instance-2 (the monitor B's) scanout selectors 22..26 through the SAME connection. radv_darwin_n48n_call passes selectors 22..26 ONLY (anything else: -EPERM; a
+  * kernel with ABI minor < 11: -ENOSYS, and the caller must keep instance 2 OFF). The argument conventions are kcall's: scalar in / out words, one optional struct in and out. radv_darwin_n48n_bo_handle returns
+  * the kernel BO handle of a VkDeviceMemory (for n48n_scan_reg). The six exports above are unchanged. */
+diff --git a/src/util/disk_cache_os.c b/src/util/disk_cache_os.c
+index 66a3f5b1..f1cda938 100644
+--- a/src/util/disk_cache_os.c
++++ b/src/util/disk_cache_os.c
+@@ -1003,8 +1003,12 @@ bool
+ disk_cache_enabled()
+ {
+    /* If running as a users other than the real user disable cache */
+-   if (!__normal_user())
+-      return false;
++   if (!__normal_user()) {
++#if DETECT_OS_APPLE
++      if (!os_get_option("MESA_SHADER_CACHE_DIR"))
++#endif
++         return false;
++   }
+ 
+    /* At user request, disable shader cache entirely.
+     * Disk cache is not enabled by default for android, for most

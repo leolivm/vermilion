@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>PhxVideoDecoder</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.phx.PhxVideoDecoder</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>PhxVideoDecoder</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>CMClassImplementations</key>
+	<array>
+		<dict>
+			<key>CMClassID</key>
+			<string>com.apple.videotoolbox.videodecoder</string>
+			<key>CMClassImplementationID</key>
+			<string>com.phx.videodecoder.hevc.vcn.static</string>
+			<key>CMClassImplementationName</key>
+			<string>HEVC Decoder on VCN4 (RADV)</string>
+			<key>CMClassImplementationVersion</key>
+			<integer>1</integer>
+			<key>CMExecutableArchitectures</key>
+			<array>
+				<string>x86_64</string>
+			</array>
+			<key>CMFactoryFunction</key>
+			<string>PhxVideoDecoder_CreateInstance</string>
+			<key>CMManufacturer</key>
+			<string>nullarc</string>
+			<key>CMMatchingInfo</key>
+			<dict>
+				<key>VTCodecType</key>
+				<array>
+					<string>hvc1</string>
+					<string>hev1</string>
+				</array>
+				<key>VTIsHardwareAccelerated</key>
+				<true/>
+				<key>VTRating</key>
+				<integer>500</integer>
+			</dict>
+		</dict>
+		<dict>
+			<key>CMClassID</key>
+			<string>com.apple.videotoolbox.videodecoder</string>
+			<key>CMClassImplementationID</key>
+			<string>com.phx.videodecoder.av1.vcn.static</string>
+			<key>CMClassImplementationName</key>
+			<string>AV1 Decoder on VCN4 (RADV)</string>
+			<key>CMClassImplementationVersion</key>
+			<integer>1</integer>
+			<key>CMExecutableArchitectures</key>
+			<array>
+				<string>x86_64</string>
+			</array>
+			<key>CMFactoryFunction</key>
+			<string>PhxVideoDecoder_CreateInstance</string>
+			<key>CMManufacturer</key>
+			<string>nullarc</string>
+			<key>CMMatchingInfo</key>
+			<dict>
+				<key>VTCodecType</key>
+				<array>
+					<string>av01</string>
+				</array>
+				<key>VTIsHardwareAccelerated</key>
+				<true/>
+				<key>VTRating</key>
+				<integer>500</integer>
+			</dict>
+		</dict>
+	</array>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+</dict>
+</plist>
