@@ -18,7 +18,7 @@ src/**/build/
 *.kext/
 # Local build inputs that must never be committed: AMD firmware and the header generated from it
 *.bin
-src/phxbringup/phx_c3_image.inc
+src/vermilion-boot/phx_c3_image.inc
 *.o
 *.bundle/
 *.dSYM/

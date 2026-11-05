@@ -4,7 +4,7 @@ Date: Wed, 4 Nov 2026 00:00:00 +0000
 Subject: [PATCH] hevc/vulkan: changes for the phxdec decoder
 
 Patch on FFmpeg n7.1 (b08d7969c550a804a59511c7b83f2dd8cc0499b8) used by the
-libavcodec_phx / libavutil_phx libraries that src/phxdec links.
+libavcodec_phx / libavutil_phx libraries that src/video-decoder links.
 ---
 diff --git a/libavcodec/hevc/hevcdec.c b/libavcodec/hevc/hevcdec.c
 index 0dc24f8..5a984ac 100644

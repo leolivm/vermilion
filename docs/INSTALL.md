@@ -7,8 +7,8 @@ its libraries into `/Library/GPUBundles`, and a LaunchDaemon that powers the GPU
 Names: this guide uses the current names (`VermilionBoot.kext`, `VermilionAccel.kext`, bundle ids `org.vermilion.boot`
 and `org.vermilion.accel`). IOKit classes (`PhxBringup`, `PhxAMDFB`, `NMXAccel`, `PhxAGDC`), sysctls (`debug.phx*`),
 the `phx-build` ioreg property, NVRAM variables and the on-disk paths below kept their old names.
-[NAMING.md](NAMING.md) maps the old names to the new ones. The renamed kexts have not been loaded on the reference
-machine yet (unverified on hardware). If you have an installation with the old names (`PhxBringup.kext` in OpenCore,
+[NAMING.md](NAMING.md) maps the old names to the new ones. The reference machine runs the kexts under these names. If
+you have an installation with the old names (`PhxBringup.kext` in OpenCore,
 `/Library/Extensions/PhxAccel.kext`), remove it first ([section 9](#9-rollback-and-uninstall), with the old names), so
 two copies of the same IOKit classes never load.
 
@@ -48,7 +48,7 @@ Boot-args the stack needs:
 | `ipc_control_port_options=0` | the kernel | part of the AMFIPass setup the accelerator kext was approved with |
 
 The reference machine also has `nvaccel=1`. The current `VermilionAccel` build does not read it (the check sits in a
-code path that is compiled only without `NMX_ACCEL`, and `src/phxaccel/build.sh` defines `NMX_ACCEL`); it is harmless to
+code path that is compiled only without `NMX_ACCEL`, and `src/vermilion-accel/build.sh` defines `NMX_ACCEL`); it is harmless to
 keep. Everything else in the reference machine's boot-args (`debug=0x100 keepsyms=1`, audio, Bluetooth, CPU name and
 power) is debugging or board-specific and not needed by Vermilion.
 
@@ -96,6 +96,7 @@ Build every component as described in [BUILD.md](BUILD.md). The outputs land in 
 | `libvulkan_radeon.dylib` (RADV) | `scripts/build/radv.sh apply`, then `scripts/build/radv.sh` | `/Library/GPUBundles/nvmtl` (section 5) |
 | `libphxdec_hevc.dylib`, `libavcodec_phx.61.dylib`, `libavutil_phx.59.dylib` (optional video decode) | `scripts/build/phxdec.sh` | next to `NVMTLDriver` (section 5.5) |
 | `phxctl`, `mesboot` | `scripts/build/tools.sh` | `/usr/local/sbin` and `~/gpu` (section 6) |
+| `metaltest` (Metal-device probe) | `scripts/build/metaltest.sh` | `~/gpu` (section 6) |
 
 The bring-up loads AMD microcode that this repository does not ship ([FIRMWARE.md](FIRMWARE.md)). Download it as the
 desktop user (it goes to `~/gpu/fw/navi31`, where the boot scripts read it, and every file is checked against
@@ -275,7 +276,7 @@ of an install: every first use then recompiles and clients can time out.
 
 1. Copy `libphxdec_hevc.dylib`, `libavcodec_phx.61.dylib` and `libavutil_phx.59.dylib` into
    `/Library/GPUBundles/NVMTLDriver.bundle/Contents/MacOS/`, with the same copy / chown / move pattern.
-2. Build the VideoToolbox bundle with `src/phxdec/vtbundle/build.sh`. It has to go into `/System/Library/Video/Plug-Ins`:
+2. Build the VideoToolbox bundle with `src/video-decoder/vtbundle/build.sh`. It has to go into `/System/Library/Video/Plug-Ins`:
    `/Library/Video/Plug-Ins` is scanned in a mode that drops ad-hoc signed bundles.
 3. That directory is on the sealed system volume. `tools/phxctl/sysvol_install.sh` installs into it the way OpenCore
    Legacy Patcher's root patches do: it mounts the live system volume read-write at `/System/Volumes/Update/mnt1`,
@@ -284,7 +285,7 @@ of an install: every first use then recompiles and clients can time out.
    reboot.
 
    ```sh
-   sudo sh tools/phxctl/sysvol_install.sh src/phxdec/build/PhxVideoDecoder.bundle /System/Library/Video/Plug-Ins
+   sudo sh tools/phxctl/sysvol_install.sh src/video-decoder/build/PhxVideoDecoder.bundle /System/Library/Video/Plug-Ins
    ```
 
    After this the system snapshot is no longer sealed: macOS offers only full (not delta) updates, and a macOS update
@@ -322,6 +323,7 @@ cp tools/phxctl/vcn_up.sh ~/gpu/vcnup/
 cp tools/phxctl/vcn/vcn0_area.bin tools/phxctl/vcn/vcn0_ram.bin tools/phxctl/vcn/vcn0_layout.sh ~/gpu/vcnup/vcn/
 chmod +x ~/gpu/vcnup/vcn_up.sh
 cp build/phxctl ~/gpu/phxctl.bin
+cp build/metaltest ~/gpu/metaltest
 sudo mkdir -p /usr/local/sbin
 sudo cp build/phxctl /usr/local/sbin/phxctl
 sudo cp build/mesboot /usr/local/sbin/mesboot
@@ -353,8 +355,11 @@ that user can therefore change what root runs at the next boot. Keep that in min
 
 ### `metaltest`
 
-The daemon decides whether the Metal device is live by running `~/gpu/metaltest`. **Its source is not in this
-repository yet**, so you have to provide a binary. Its contract, read from the daemon:
+The daemon decides whether the Metal device is live by running `~/gpu/metaltest`, built from
+[`tools/metaltest/metaltest.m`](../tools/metaltest/metaltest.m) by `scripts/build/metaltest.sh` (the same source the
+reference machine runs). It prints `Metal devices: <n>` and the device names, then compiles and runs a small compute
+kernel on the GPU and prints `COMPUTE RESULT: 4096/4096 correct` when every value is right (exit code 0; the source
+lists the other exit codes). How the daemon uses it:
 
 - It is run as the desktop user (`sudo -u <user> ~/gpu/metaltest`), up to 40 times, one second apart, after `NMXAccel`
   is up and `PhxAMDFB` holds the panel.
@@ -365,9 +370,8 @@ repository yet**, so you have to provide a binary. Its contract, read from the d
 - Its process name must be allowed by `/Library/GPUBundles/nvmtl-allow.txt` (a `*` line or a `metaltest` line), or the
   plugin gives it no device.
 
-A minimal probe prints the number of devices `MTLCopyAllDevices()` returns as `Metal devices: <n>`, for example with
-`NSLog` (unverified: the reference machine's probe is a small Objective-C program of this kind; its exact code is not
-published).
+The daemon only looks for the `Metal devices: 1` line; the compute check is for you when you run it by hand
+(section 8.1).
 
 ## 7. The boot daemon
 

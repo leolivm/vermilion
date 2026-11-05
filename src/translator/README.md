@@ -1,6 +1,6 @@
 # Shader translator (`libnvmtl_translate.dylib`)
 
-The Metal plugin (`src/nmplugin`) loads this library at run time to translate Metal AIR (the LLVM IR inside a
+The Metal plugin (`src/metal-plugin`) loads this library at run time to translate Metal AIR (the LLVM IR inside a
 `.metallib`) into Vulkan SPIR-V, which RADV then compiles. It is installed next to the plugin, as
 `NVMTLDriver.bundle/Contents/MacOS/libnvmtl_translate.dylib` ([docs/INSTALL.md](../../docs/INSTALL.md)).
 

@@ -271,7 +271,7 @@ static bool shape(const IOExternalMethodArguments *a, uint32_t sin, uint32_t sou
 
 // b95: WindowServer's composite marks for PhxAccel (PhxNativeABI.h PHXN_SEL_SURFGPUMARK). Outside the client lock: it
 // touches no client state and only forwards to NVAccel's nvSurfVram, which takes its own short lock.
-#include "../phxaccel/nvrm_surfshare_abi.h"
+#include "../vermilion-accel/nvrm_surfshare_abi.h"
 IOReturn IOAccelPhxNativeClient::doSurfGpuMark(IOExternalMethodArguments *a) {
     if (!shape(a, 2, 1, 0, 0)) return kIOReturnBadArgument;
     a->scalarOutput[0] = NVRM_SS_OFF;

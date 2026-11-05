@@ -5,7 +5,7 @@
 // (phxFbSetHeadOnline, then gPhxHead2 = 2 / 1). Never publishes a nub (that stays debug.phxhead2=1's), never touches head 0.
 // Part of the nvrm-accel.cpp translation unit (PHX_FB builds), included right after debug.phxhead2's handler.
 
-#include "../../phxbringup/PhxSwitchABI.h"
+#include "../../vermilion-boot/PhxSwitchABI.h"
 
 int phxFbHeadInfo(unsigned i, int *online, uint8_t *edid, uint32_t max, uint32_t *len);   // phxfb.cpp
 

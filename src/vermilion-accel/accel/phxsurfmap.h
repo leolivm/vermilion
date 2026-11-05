@@ -6,7 +6,7 @@
 // Learned in NVDisplayPipe::performTransaction from the transaction itself: the pipe's framebuffer gives the head
 // (NVAccel::pipeFramebuffer), plane 0's IOSurface gives the ID. Published read-only as the opaque sysctl
 // debug.phxsurfmap, which the Metal plugin reads in WindowServer before it flips HUBP0 to a surface
-// (src/nmplugin/nvmtl_headmap.h parses the same layout). Design after Cobalt64's native_m6_pure.h SurfTable
+// (src/metal-plugin/nvmtl_headmap.h parses the same layout). Design after Cobalt64's native_m6_pure.h SurfTable
 // (MIT), reduced to two heads and time-based ambiguity.
 #pragma once
 #include <stddef.h>

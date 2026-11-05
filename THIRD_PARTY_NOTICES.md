@@ -3,7 +3,7 @@
 Components that Vermilion's source tree is built from or carries, the license each comes under, and where its source
 is. Full license texts are in [`LICENSES/`](LICENSES). Adapted from nullarc's `THIRD_PARTY_NOTICES.md`.
 
-## NullMoth macOS driver — `src/phxaccel`, `src/nmplugin`
+## NullMoth macOS driver — `src/vermilion-accel`, `src/metal-plugin`
 
 PolyForm Noncommercial License 1.0.0 — [`LICENSES/PolyForm-Noncommercial-1.0.0.txt`](LICENSES/PolyForm-Noncommercial-1.0.0.txt)
 
@@ -11,9 +11,9 @@ PolyForm Noncommercial License 1.0.0 — [`LICENSES/PolyForm-Noncommercial-1.0.0
 Required Notice: Copyright (c) 2026 NullMoth Systems (https://nullmothsystems.com)
 ```
 
-Source: https://github.com/nullmoth/nvidia-macos-driver (`kexts/`, `plugin/`). `src/phxaccel` is NullMoth's kernel
+Source: https://github.com/nullmoth/nvidia-macos-driver (`kexts/`, `plugin/`). `src/vermilion-accel` is NullMoth's kernel
 accelerator (NVRM accelerator, AGDC, framebuffer patterns) as adapted to AMD by nullarc and then by Vermilion;
-`src/nmplugin` is NullMoth's Metal plugin with changes for this card. The headers in `src/phxaccel/accel/iofam`,
+`src/metal-plugin` is NullMoth's Metal plugin with changes for this card. The headers in `src/vermilion-accel/accel/iofam`,
 `accel/re` and `AppleGraphicsDeviceControl_re.h` are NullMoth's interoperability descriptions of Apple class layouts;
 they contain no Apple code. Noncommercial use only. Vermilion is not a NullMoth release: NullMoth's official sources
 are only its own repositories, the 1401 app and nullmothsystems.com.
@@ -37,7 +37,7 @@ with the GNU GPL v3.0 it refers to in [`LICENSES/GPL-3.0-only.txt`](LICENSES/GPL
   ((MIT or Apache-2.0) and Unicode-3.0); the test-only `spirv-tools` crates when `TRANSLATOR_TEST=1`. A binary
   release of the library must carry these crates' license notices.
 
-## nullarc — `src/phxbringup` (skeleton), `src/phxaccel` (AMD adaptation), `tools/phxctl` (phxctl, mesboot)
+## nullarc — `src/vermilion-boot` (skeleton), `src/vermilion-accel` (AMD adaptation), `tools/phxctl` (phxctl, mesboot)
 
 MIT License, Copyright (c) 2026 luuumi-dev and the nullarc contributors ([`LICENSES/MIT-nullarc.txt`](LICENSES/MIT-nullarc.txt)),
 or at your option GPL-2.0-only ([`LICENSES/GPL-2.0-only.txt`](LICENSES/GPL-2.0-only.txt)), for the code written for
@@ -50,7 +50,7 @@ MIT/X11 license ([`LICENSES/MIT-AMD.txt`](LICENSES/MIT-AMD.txt)), Copyright Adva
 per file). Source: the Linux kernel, `drivers/gpu/drm/amd/` (v6.8), https://git.kernel.org/.
 
 - Taken as files: `tools/phxctl/mes_v11_api_def.h`, `tools/phxctl/csb_gfx11.h` (notice at the top of each).
-- Ported or transcribed: `src/phxbringup/phx_regs_dcn32.h` (from `dcn_3_2_0_offset.h` / `_sh_mask.h`), `PhxGamma.h`
+- Ported or transcribed: `src/vermilion-boot/phx_regs_dcn32.h` (from `dcn_3_2_0_offset.h` / `_sh_mask.h`), `PhxGamma.h`
   (`dcn30_cm_common.c`, `custom_float.c`, `color_gamma.c`), `PhxVbios.h` (`bios_parser2.c`, `atomfirmware.h`),
   `PhxDdc.h` (`dce_aux.c`, `dce_i2c_hw.c`), `PhxHpd.h` (`hw_hpd.c`, `link_hpd.c`, `irq_service_dcn32.c`),
   `PhxPipe0.h` / `PhxPipe2.h` and the `phx_*_plan_*.inc` register plans, `phx_psp_smu.cpp` (`psp_gfx_if.h`,
@@ -65,7 +65,7 @@ per file). Source: the Linux kernel, `drivers/gpu/drm/amd/` (v6.8), https://git.
 - `src/navi48-bringup`: BSD-3-Clause, Copyright (c) 2026 the Navi48 project
   ([`LICENSES/BSD-3-Clause-navi48-bringup.txt`](LICENSES/BSD-3-Clause-navi48-bringup.txt)).
 - Source: https://github.com/Almosst-DEV/Cobalt64. `patches/mesa/0001-0009` are Cobalt64's Darwin backend for RADV;
-  `src/phxbringup/PhxNativeABI.h` follows `Navi48NativeABI.h`; `phx_psp_smu.cpp` follows `psp_v14_0.cpp`.
+  `src/vermilion-boot/PhxNativeABI.h` follows `Navi48NativeABI.h`; `phx_psp_smu.cpp` follows `psp_v14_0.cpp`.
 
 ## RX4Darwin (AMDRadeonRDNA4.kext) — AUX, DMUB and HPD methods
 
@@ -85,7 +85,7 @@ MIT, Copyright The Mesa 3D Graphics Library contributors (https://docs.mesa3d.or
 `f5cb8ee032adabef599ae892ec4e42d796b84da9` (https://gitlab.freedesktop.org/mesa/mesa). Patches 0001-0009 Cobalt64,
 0010-0015 nullarc, 0016-0017 Vermilion.
 
-## FFmpeg — `patches/ffmpeg`, the libraries `src/phxdec` links
+## FFmpeg — `patches/ffmpeg`, the libraries `src/video-decoder` links
 
 LGPL-2.1-or-later ([`LICENSES/LGPL-2.1-or-later.txt`](LICENSES/LGPL-2.1-or-later.txt)). Base: FFmpeg n7.1
 (https://ffmpeg.org, b08d7969c550a804a59511c7b83f2dd8cc0499b8), built as shared `libavcodec_phx` / `libavutil_phx`
@@ -97,7 +97,7 @@ linux-firmware `amdgpu/` (https://gitlab.com/kernel-firmware/linux-firmware), [`
 Copyright (C) Advanced Micro Devices, Inc.; redistribution in binary form only; no reverse engineering, decompilation
 or disassembly. Vermilion ships no firmware file and no excerpt of one. As nullarc does (its `.gitignore` keeps
 `*.bin` out and `tools/fetch_test_firmware.sh` downloads the blobs), `tools/firmware/fetch_firmware.sh` downloads them and
-checks them against `tools/firmware/fw.lock`; `tools/firmware/c3_image.py` builds `src/phxbringup/phx_c3_image.inc` locally.
+checks them against `tools/firmware/fw.lock`; `tools/firmware/c3_image.py` builds `src/vermilion-boot/phx_c3_image.inc` locally.
 
 ## Build-time only
 

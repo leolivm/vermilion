@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""c3_image.py [--fw FILE] [--out FILE]: generate src/phxbringup/phx_c3_image.inc from the user's own copy of
+"""c3_image.py [--fw FILE] [--out FILE]: generate src/vermilion-boot/phx_c3_image.inc from the user's own copy of
 linux-firmware amdgpu/dcn_3_2_0_dmcub.bin (default: $HOME/gpu/fw/navi31/dcn_3_2_0_dmcub.bin, see fetch_firmware.sh).
 
 PhxBringup's cold-boot PHY fix (debug.phxc3, PhxC3Load.h) streams a 0xA000-byte slice of that file to the PHY SRAM.
@@ -12,7 +12,7 @@ import hashlib, os, struct, sys, zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FW = os.path.join(os.path.expanduser('~'), 'gpu', 'fw', 'navi31', 'dcn_3_2_0_dmcub.bin')
-INC = os.path.join(ROOT, 'src', 'phxbringup', 'phx_c3_image.inc')
+INC = os.path.join(ROOT, 'src', 'vermilion-boot', 'phx_c3_image.inc')
 OFF, LEN, SHA = 0xE200, 0xA000, 'd51426610de22c60'
 
 

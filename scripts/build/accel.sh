@@ -1,11 +1,11 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# accel.sh: VermilionAccel.kext (src/phxaccel, formerly PhxAccel.kext: PhxAMDFB framebuffer + NMXAccel accelerator + PhxAGDC) -> $VERMILION_OUT,
+# accel.sh: VermilionAccel.kext (src/vermilion-accel, formerly PhxAccel.kext: PhxAMDFB framebuffer + NMXAccel accelerator + PhxAGDC) -> $VERMILION_OUT,
 # ad-hoc signed by its build.sh. When build/linkgate holds export lists (scripts/build/linkgate_exports.sh), the link gate
 # runs too: every imported symbol must be exported by a library in its OSBundleLibraries, or kmutil refuses the load.
 . "$(dirname "$0")/lib.sh"
 : "${MKSDK:?set MKSDK to a MacKernelSDK checkout}"
-S="$ROOT/src/phxaccel"
+S="$ROOT/src/vermilion-accel"
 (cd "$S" && sh ./build.sh "$MKSDK")
 if [ -d "${LINKGATE_EXPORTS:-$ROOT/build/linkgate}" ]; then python3 "$ROOT/scripts/build/linkgate.py" "$S/build/VermilionAccel.kext"
 else echo "link gate skipped: no export lists (scripts/build/linkgate_exports.sh)"; fi

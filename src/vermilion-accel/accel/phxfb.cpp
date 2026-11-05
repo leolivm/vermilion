@@ -21,10 +21,10 @@
 #include <sys/sysctl.h>
 #include "nvrm_vram_abi.h"
 #include "nvrm_gpuva_abi.h"
-#include "../../phxbringup/PhxEdid.h"   // EDID validation + live/static choice (M6 step 2), shared with the host test
-#include "../../phxbringup/PhxSwitchABI.h"   // mode switch: PhxBringup's "phxPipe2SetMode" (kext b93)
-#include "../../phxbringup/PhxDdc.h"    // phxddc::kSrcAuto / kSrcOther: the phxEdidRead source request (kext b81)
-#include "../../phxbringup/PhxGamma.h"  // head-1 gamma: PhxBringup's "phxPipe2SetGamma" (kext b98), resample / identity
+#include "../../vermilion-boot/PhxEdid.h"   // EDID validation + live/static choice (M6 step 2), shared with the host test
+#include "../../vermilion-boot/PhxSwitchABI.h"   // mode switch: PhxBringup's "phxPipe2SetMode" (kext b93)
+#include "../../vermilion-boot/PhxDdc.h"    // phxddc::kSrcAuto / kSrcOther: the phxEdidRead source request (kext b81)
+#include "../../vermilion-boot/PhxGamma.h"  // head-1 gamma: PhxBringup's "phxPipe2SetGamma" (kext b98), resample / identity
 #include "phxhead.h"                    // M7 S3a: the second head's layout, mode rule, AGDC list, EDID fallback (host-tested)
 #include "phxrotate_k.h"                // rotation S1: rotated modes + the copy's angle (phxrotate_k.cpp, phxrotate.h), off by default
 #include "phxoffer.h"                   // head 0's offer gate: only the lit mode until the daemon's restart (host-tested)

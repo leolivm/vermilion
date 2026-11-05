@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 /* nvmtl_headmap.h: M7 S4b, which head a WindowServer display surface belongs to.
    Pure C, no locking, no Vulkan: the caller reads the kernel's sysctl debug.phxsurfmap (PhxAccel,
-   src/phxaccel/accel/phxsurfmap.h exportBlob) and asks for a verdict before HUBP0 is flipped to a surface.
+   src/vermilion-accel/accel/phxsurfmap.h exportBlob) and asks for a verdict before HUBP0 is flipped to a surface.
    A host test drives this file together with the kernel half. */
 #ifndef NVMTL_HEADMAP_H
 #define NVMTL_HEADMAP_H

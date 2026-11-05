@@ -1,6 +1,10 @@
 # fw.lock: the linux-firmware amdgpu/ files the Navi 31 bring-up loads, with the md5 of the revision the box
 # scripts were validated with (tools/phxctl/bringup_navi31.sh, vcn_up.sh). fetch_firmware.sh refuses any other revision.
-# The linux-firmware commit those revisions came from is not recorded yet (TODO: pin it).
+# All 20 files below are byte-identical (git blob ids) at one linux-firmware commit: release tag 20250917, the first
+# release that has them. They are unchanged up to tag 20251111; later releases replace most of them (GC, PSP, SMU,
+# VCN, then SDMA and DCN).
+# fetch_firmware.sh downloads from the commit on the next line.
+# linux-firmware-commit: add225168d0d1ba4c174d5eb15272b53de01ad5a
 # <file> <md5> <bytes>
 dcn_3_2_0_dmcub.bin 6a06c16a77e84fe22e91c9d2e6220476 284432
 gc_11_0_0_imu.bin f57b77879159d1c3f25083f501a821eb 132352

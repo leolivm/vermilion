@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>   // static_assert in PhxNativeABI.h
-#include "../../src/phxbringup/PhxNativeABI.h"
+#include "../../src/vermilion-boot/PhxNativeABI.h"
 
 static io_connect_t c;
 

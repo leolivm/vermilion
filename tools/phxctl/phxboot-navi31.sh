@@ -44,7 +44,7 @@ echo "== $(date '+%F %T') phxboot(navi31, Option 1b)"
 # The stored sets cannot be kept away from that WindowServer: it reads com.apple.windowserver once, before this daemon runs,
 # and every display change of a logged-in session copies the user's own DisplaySets (with "AOC
 # alone" at 144) into DisplayAnyUserSets at once (SkyLight WSSaveServerWidePreferences). So the
-# fix is PhxAccel's head-0 offer gate (src/phxaccel/accel/phxoffer.h): with a head-0 mode list, head 0 offers only the
+# fix is PhxAccel's head-0 offer gate (src/vermilion-accel/accel/phxoffer.h): with a head-0 mode list, head 0 offers only the
 # lit mode from its start, the stored 144 set matches nothing and the first WindowServer keeps the current mode; this daemon
 # opens the gate (debug.phxfb0_offer=1, which also drops CoreDisplay's IOFBConfig cache) just before its ONE restart, so the
 # restarted WindowServer lists every mode. The v4 prefs edits are gone; a v4 stash left on disk is put back once.

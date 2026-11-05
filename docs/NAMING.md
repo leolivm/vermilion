@@ -9,17 +9,30 @@ renaming them would change ABI or on-disk state that other parts depend on, with
 
 | Was | Now | Where |
 |---|---|---|
-| `PhxBringup.kext` (executable `PhxBringup`) | **`VermilionBoot.kext`** (executable `VermilionBoot`) | `src/phxbringup/Info.plist`, `build.sh`, `scripts/build/kext.sh`, the OpenCore `Kernel > Add` entry ([INSTALL.md](INSTALL.md)) |
+| `PhxBringup.kext` (executable `PhxBringup`) | **`VermilionBoot.kext`** (executable `VermilionBoot`) | `src/vermilion-boot/Info.plist`, `build.sh`, `scripts/build/kext.sh`, the OpenCore `Kernel > Add` entry ([INSTALL.md](INSTALL.md)) |
 | bundle id `org.drip.PhxBringup` | **`org.vermilion.boot`** | `Info.plist` (bundle and both IOKit personalities), `kmod_info.c` (`KMOD_EXPLICIT_DECL`) |
-| `PhxAccel.kext` (executable `PhxAccel`) | **`VermilionAccel.kext`** (executable `VermilionAccel`) | `src/phxaccel/Info.plist`, `build.sh`, `scripts/build/accel.sh`; installed as `/Library/Extensions/VermilionAccel.kext` |
+| `PhxAccel.kext` (executable `PhxAccel`) | **`VermilionAccel.kext`** (executable `VermilionAccel`) | `src/vermilion-accel/Info.plist`, `build.sh`, `scripts/build/accel.sh`; installed as `/Library/Extensions/VermilionAccel.kext` |
 | bundle id `com.luuumi.PhxAccel` | **`org.vermilion.accel`** | `Info.plist` (bundle and both personalities), `nvrm-accel.cpp` (`KMOD_EXPLICIT_DECL`), the boot daemon's `kmutil showloaded` check and its default `ACCEL` path, the `kmutil` mock in `tests/mock/run.sh` |
-| bundle id `org.drip.PhxVA` | `org.vermilion.va` | `src/phxva/Info.plist`. The bundle keeps its name `PhxVA.bundle`: the boot kext publishes `IODVDBundleName = PhxVA`, and AppleGVA loads the bundle by that name |
+| bundle id `org.drip.PhxVA` | `org.vermilion.va` | `src/video-accel/Info.plist`. The bundle keeps its name `PhxVA.bundle`: the boot kext publishes `IODVDBundleName = PhxVA`, and AppleGVA loads the bundle by that name |
 
-Checked: both kexts build from this tree with the new names, the `kmod_info` name in each binary equals its
-`CFBundleIdentifier`, and the boot-daemon mocks pass with the renamed `kmutil` check. The new names have **not been
-loaded on hardware yet**: until they are, treat the rename as untested on a running system. An existing installation
-with the old names must be removed first ([INSTALL.md](INSTALL.md), "Uninstall"), so that two copies of the same
-classes never load.
+Checked on the reference machine: `VermilionBoot.kext` injected by OpenCore and `VermilionAccel.kext` loaded from the
+Auxiliary Kernel Collection, both built from this tree, give the accelerated desktop on two monitors (144 Hz and
+165 Hz). At build time the `kmod_info` name in each binary equals its `CFBundleIdentifier`, and the boot-daemon mocks
+pass with the renamed `kmutil` check. An existing installation with the old names must be removed first
+([INSTALL.md](INSTALL.md), "Uninstall"), so that two copies of the same classes never load.
+
+### Source directories
+
+The source directories are named after the component they build. Inside them, files and classes keep their old names
+(see below).
+
+| Was | Now | Builds |
+|---|---|---|
+| `src/phxbringup` | [`src/vermilion-boot`](../src/vermilion-boot) | `VermilionBoot.kext` |
+| `src/phxaccel` | [`src/vermilion-accel`](../src/vermilion-accel) | `VermilionAccel.kext` |
+| `src/nmplugin` | [`src/metal-plugin`](../src/metal-plugin) | the Metal plugin `NVMTLDriver` |
+| `src/phxdec` | [`src/video-decoder`](../src/video-decoder) | `libphxdec_hevc.dylib`, `PhxVideoDecoder.bundle` |
+| `src/phxva` | [`src/video-accel`](../src/video-accel) | `PhxVA.bundle` |
 
 ## Kept, and why
 
@@ -34,7 +47,6 @@ classes never load.
 | boot-args | `-phxhotplugoff`, `-phxfb0open`, `phxdebug`, ... | Live in the user's OpenCore `config.plist` |
 | on-disk paths | `~/gpu`, `~/gpu/phxboot-*` flag files, `/var/log/phxboot.log`, `/Library/LaunchDaemons/local.phxboot.plist`, `/Library/GPUBundles/NVMTLDriver.bundle`, `/Library/GPUBundles/nvmtl/` | The daemon, the plugin and the tools hard-code them as defaults (each can be overridden by an environment variable in the daemon); a move needs a migration step |
 | tools and files | `phxctl`, `phxboot-navi31.sh`, `mesboot`, `NVMTLDriver`, `libnvmtl_translate.dylib`, `PhxVideoDecoder` (bundle id `com.phx.PhxVideoDecoder`) | Names the daemon and the plugin look up |
-| source directories | `src/phxbringup`, `src/phxaccel`, `src/nmplugin`, ... | Keep the history readable against nullarc and NullMoth |
 | log lines and comments | "PhxBringup not loaded", "PhxAccel without debug.phxhotplug0", ... | In those messages `PhxBringup` means VermilionBoot.kext and `PhxAccel` means VermilionAccel.kext; the mocks match on the log text |
 
 The `Phx` prefix does not refer to any product of this project; see [CREDITS.md](../CREDITS.md) (nullarc).

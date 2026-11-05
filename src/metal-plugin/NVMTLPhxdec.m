@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 /* Our code (Vermilion, RX 7900 XT), included by NVMTLDevice.m at this exact place: registers our VideoToolbox
-   decoder (src/phxdec) in Metal processes. */
-// WP6 B5 (Vermilion, AMD RX 7900 XT): our HEVC decoder on VCN4 (src/phxdec, libphxdec_hevc.dylib next to this
+   decoder (src/video-decoder) in Metal processes. */
+// WP6 B5 (Vermilion, AMD RX 7900 XT): our HEVC decoder on VCN4 (src/video-decoder, libphxdec_hevc.dylib next to this
 // plugin with its FFmpeg libraries). It registers 'hvc1' and 'hev1' at rating 1000 in VTDecoderXPCService and in every
 // Metal process but WindowServer (the client picks from its own registry). Off with NVMTL_PHXDEC=0 or the file
 // /Library/GPUBundles/nvmtl/phxdec-off. A session it cannot serve (VCN not up) fails StartSession and VideoToolbox

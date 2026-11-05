@@ -144,7 +144,7 @@ diagnosis ("missing Metal device ready; killall NOT issued; reboot WAS issued").
 - SIM_WSMODEL=1 (prefs_world): the first WindowServer (pid 12345) reads the prefs ONCE, before the daemon runs ($ST/ws0-snapshot.plist);
   on the arm's `debug.nvaccelfb=1` write a one-display set in THAT copy away from id 1 / 60 kills it (pid 1021, a corpse, no
   .ips) only if head 0 OFFERS id 2: its list armed before the claim (phxpipe0_modes) and the offer gate not closed.
-- SIM_OFFER_GATE=1 = a PhxAccel with the head-0 offer gate (src/phxaccel/accel/phxoffer.h): the gate closes at the claim (unless -phxfb0open in
+- SIM_OFFER_GATE=1 = a PhxAccel with the head-0 offer gate (src/vermilion-accel/accel/phxoffer.h): the gate closes at the claim (unless -phxfb0open in
   SIM_BOOTARGS), `debug.phxfb0_offer=1` or a resync to id 2 opens it; without it the oid does not exist.
 - `session_saves`: a logged-in session's display save (SkyLight copies the user's sets, AOC alone at 144, into the system prefs).
 - Two-boot scenarios: `boot1` (log in boot1.log) + `reboot_world`, then `go` = boot 2 with the checks.

@@ -15,6 +15,7 @@ either (`homecheck` in `scripts/build/lib.sh`).
 | `radv.sh apply` / `radv.sh` | `libvulkan_radeon.dylib` | `MESA_DIR` = Mesa checkout at f5cb8ee0; meson, ninja, glslangValidator, python3 with mako, pyyaml, markupsafe, packaging |
 | `phxdec.sh` | `libphxdec_hevc.dylib` | `FFMPEG_PREFIX` = FFmpeg n7.1 + `patches/ffmpeg` built as shared `libavcodec_phx` / `libavutil_phx` (LGPL, no GPL parts); `VULKAN_HEADERS` |
 | `tools.sh` | `phxctl`, `mesboot`, `vcn_write_test`, `submit_test` | - |
+| `metaltest.sh` | `metaltest` (the boot daemon's Metal-device probe, `tools/metaltest/metaltest.m`) | - |
 
 Plugins, dylibs and kexts must be ad-hoc signed (`codesign -fs -`): WindowServer falls back to the firmware
 framebuffer with an unsigned plugin. The scripts do it.
