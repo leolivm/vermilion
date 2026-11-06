@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-// PhxFB: the 780M's display as an IOFramebuffer that PhxAccel (NMXAccel) composites for WindowServer.
+// PhxFB: the GPU's display as an IOFramebuffer that PhxAccel (NMXAccel) composites for WindowServer.
 // Like NullMoth's NMIntelFB (phase 1), it takes over the mode the firmware (GOP) already lit, at boot in place of the
 // firmware framebuffer (IONDRV), and writes nothing to the display engine: the scan-out surface is the boot console's
 // (IOPlatformExpert::getConsoleInfo), the accelerator's display pipe copies each finished frame into a write-combined CPU

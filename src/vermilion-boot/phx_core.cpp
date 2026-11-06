@@ -21,8 +21,8 @@ bool PhxBringup::start(IOService *provider) {
         setProperty("phx-pci-cmd-after", pci->configRead16(kIOPCIConfigCommand), 16);
     }
     mmio = pci->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress5);
-    // navi31: with Resizable BAR, BAR0 is the whole 20 GiB of VRAM (a 32 GiB window). Everything this kext places
-    // in VRAM lives below 160 MiB, so map only the first kFbAperMapMax bytes instead of 32 GiB of kernel VA.
+    // navi31: BAR0 measures 256 MiB on the reference RX 7900 XT and on an XTX, both with Resizable BAR on in the BIOS.
+    // Everything this kext places in VRAM lives below 160 MiB, so map at most kFbAperMapMax even on a larger BAR.
     if (IODeviceMemory *bar0 = pci->getDeviceMemoryWithRegister(kIOPCIConfigBaseAddress0)) {
         IOByteCount len = bar0->getLength() < kFbAperMapMax ? bar0->getLength() : kFbAperMapMax;
         if (IODeviceMemory *sub = IODeviceMemory::withSubRange(bar0, 0, len)) {

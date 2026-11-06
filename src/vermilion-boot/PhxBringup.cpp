@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR GPL-2.0-only
 //
-//  PhxBringup.cpp — Phoenix (Radeon 780M, 1002:1900) bring-up kext, step E1.
+//  PhxBringup.cpp — RX 7900 XT (Navi 31, 1002:744c) bring-up kext; it began on the Phoenix Radeon 780M.
 //
 //  Publishes the service the RADV Darwin backend opens (class PhxBringup, user client type 'N48N')
 //  and answers ABI v1 selectors 0..8 with the same rules as Mesa's in-process mock kext

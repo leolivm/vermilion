@@ -527,7 +527,8 @@ GPU up and gives apps Metal, while WindowServer stays on the firmware framebuffe
 
    Each boot starts with a `== <date> <time> phxboot(navi31, ...)` header; look at the last one. This boot should show
    `== bring-up + claim ==`, `navi31 up: compute + gfx queues ready`, `NMXAccel up`, `no desktop arm: GOP + Metal for apps`
-   and `done <time>`.
+   and `done <time>`. If `/var/log/phxboot.log` does not exist, the daemon never ran: the GPU stays unaccelerated
+   until sections 6 and 7 are done. `phx-stage` = `E3` does not mean the bring-up happened.
 
 4. Check the kernel side and Metal:
 

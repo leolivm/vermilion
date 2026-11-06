@@ -6,6 +6,8 @@ All builds are x86_64 and run on macOS with the Command Line Tools (`xcrun clang
 `-ffile-prefix-map` / `-fdebug-prefix-map` for the checkout and `$HOME`, and each script fails if a binary still names
 either (`homecheck` in `scripts/build/lib.sh`).
 
+Dependencies may sit in `deps/`, which git ignores: `deps/MacKernelSDK` (pass it as `MKSDK`), `deps/Vulkan-Headers` and `deps/ffmpeg-lib/prefix`.
+
 | Script | Builds | Needs |
 |---|---|---|
 | `kext.sh` | `VermilionBoot.kext` | `MKSDK` (https://github.com/acidanthera/MacKernelSDK), the firmware of [FIRMWARE.md](FIRMWARE.md) (`PHX_FW`, default `~/gpu/fw/navi31`) for the generated `phx_c3_image.inc` |

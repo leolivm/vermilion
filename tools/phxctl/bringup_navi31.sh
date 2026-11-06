@@ -4,7 +4,7 @@
 # this card (from a log of the PSP commands Linux sent; the capture tool is not included):
 # PSP ring, TOC, SMU firmware, TMR, every engine's firmware through LOAD_IP_FW, RLC autoload, wait for
 # BOOTLOAD_COMPLETE, then the RS64 program-counter setup Linux wrote (gfx_v11_0_config_gfx_rs64).
-# Differences from bringup5.sh (780M): TOC comes from inside psp_13_0_0_sos.bin; the SMU firmware is loaded by the
+# Differences from the Radeon 780M bring-up: TOC comes from inside psp_13_0_0_sos.bin; the SMU firmware is loaded by the
 # driver; CP firmware is RS64 + per-pipe stacks; RLC_V is loaded; no EnableGfxImu SMU message (APU-only — on a dGPU
 # AUTOLOAD_RLC starts IMU/RLC); the bootload status register is 0xee82 (0xee7e is the GC 11.0.1 variant).
 # Offsets/sizes inside each firmware file follow Linux 6.8's ucode headers and match what Linux loaded, ucode by ucode.

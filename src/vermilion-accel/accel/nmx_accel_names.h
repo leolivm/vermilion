@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-// PhxAccel: the NullMoth accelerator built for the Radeon 780M (Phoenix) that PhxBringup drives.
+// PhxAccel: the NullMoth accelerator built for the Navi 31 GPU that PhxBringup drives (it began on the Radeon 780M).
 // Every class gets an NMX name: NVMTLDriver picks AMD/RADV when the accelerator conforms to "NMXAccel",
 // and treats any registered "NVAccel" as an NVIDIA card.
 #pragma once

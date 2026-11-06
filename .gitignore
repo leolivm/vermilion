@@ -25,3 +25,4 @@ src/vermilion-boot/phx_c3_image.inc
 __pycache__/
 target/
 *.pyc
+/deps/

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (MIT OR GPL-2.0-only) AND BSD-3-Clause
 /*
  * PhxNativeABI.h — the "N48N" user-client ABI (v1, selectors 0..8) as spoken by the Cobalt64 RADV Darwin
- * backend, for the Phoenix (Radeon 780M) bring-up kext.
+ * backend, for the Navi 31 bring-up kext (it began on the Phoenix Radeon 780M).
  *
  * Layouts and selector numbers follow Cobalt64 src/navi48-bringup/src/Navi48NativeABI.h
  * (BSD-3-Clause, (c) 2026 the Navi48 project); the AMDGPU_* values are those of Linux/Mesa
