@@ -181,3 +181,5 @@ SIM_LW_FAIL=<verb> refuses that verb. Helpers: expect_sfn (true / false / absent
 | b21_flag_off / b21_flag_off_left | ~/gpu/phxboot-b21guard = 0: no defaults call at all (TERM too); a guard left ON by an earlier boot is reported |
 | b21_two_boots | shutdown ON, next boot: start reads '1' (what the GOP loginwindow read), OFF deletes it |
 | b21_off_fails | delete refused: OFF FAILED logged, the user's value kept in the .orig file |
+
+`wm144_guard_test.sh`: the stutter guard of `tools/phxctl/wm144.sh`, with a fake `phxctl.bin` (16 cases).

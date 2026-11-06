@@ -1696,6 +1696,24 @@ static uint32_t nvmtl_tex_attach_vkfmt(NVMTLTexture *t, int *a8) {
     v->_stex = [v nvi]->storage && !a8 && nvmtl_vk_format_is_storage(vkf);
     return v;
 }
+// macOS 26: the same view as newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:, described by an
+// MTLTextureViewDescriptor. The descriptor is read by key because the plugin is built for macOS 15, where the class does
+// not exist. A field left at zero means "as the texture is": no pixel format keeps the texture's, an empty level or slice
+// range covers every level or slice, and an all-zero swizzle is the identity.
+- (id<MTLTexture>)newTextureViewWithDescriptor:(id)d {
+    if (!d) return nil;
+    MTLPixelFormat f = [[d valueForKey:@"pixelFormat"] unsignedIntegerValue];
+    MTLTextureType tt = (MTLTextureType)[[d valueForKey:@"textureType"] unsignedIntegerValue];
+    NSRange levels = [[d valueForKey:@"levelRange"] rangeValue], slices = [[d valueForKey:@"sliceRange"] rangeValue];
+    MTLTextureSwizzleChannels sw = { 0, 0, 0, 0 };
+    { id v = [d valueForKey:@"swizzle"];
+      if ([v isKindOfClass:[NSValue class]] && !strcmp([(NSValue *)v objCType], @encode(MTLTextureSwizzleChannels))) [(NSValue *)v getValue:&sw size:sizeof sw]; }
+    if (f == MTLPixelFormatInvalid) f = self.pixelFormat;
+    if (!levels.length) levels = NSMakeRange(0, self.mipmapLevelCount);
+    if (!slices.length) slices = NSMakeRange(0, self.textureType == MTLTextureTypeCube ? 6 : self.textureType == MTLTextureTypeCubeArray ? self.arrayLength * 6 : self.arrayLength);
+    if (!sw.red && !sw.green && !sw.blue && !sw.alpha) sw = MTLTextureSwizzleChannelsMake(MTLTextureSwizzleRed, MTLTextureSwizzleGreen, MTLTextureSwizzleBlue, MTLTextureSwizzleAlpha);
+    return [self newTextureViewWithPixelFormat:f textureType:tt levels:levels slices:slices swizzle:sw];
+}
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)f textureType:(MTLTextureType)tt
                                          levels:(NSRange)levels slices:(NSRange)slices
                                         swizzle:(MTLTextureSwizzleChannels)sw {
@@ -2749,6 +2767,9 @@ static uint64_t nvmtl_resid_pipe(id o, uint64_t *slot) {
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return 1024; }
 - (NSUInteger)threadExecutionWidth { return 32; }
 - (BOOL)threadgroupSizeMatchesTileSize { return NO; }
+- (MTLSize)requiredThreadsPerTileThreadgroup { return MTLSizeMake(0, 0, 0); }   // no tile pipelines here
+- (MTLSize)requiredThreadsPerObjectThreadgroup { return _reqObj; }
+- (MTLSize)requiredThreadsPerMeshThreadgroup { return _reqMesh; }
 - (NSString *)label { return _descriptor.label; }
 - (BOOL)supportIndirectCommandBuffers { return _descriptor.supportIndirectCommandBuffers; }
 - (MTLResourceID)gpuResourceID {
@@ -3107,6 +3128,13 @@ static BOOL nvmtl_pixel_sampler_update(NSMutableDictionary *states, NSString *in
     static const uint32_t off[6] = { 7, 0, 0, 0, 0xff, 0xff };
     nvmtl_vk_cmd_set_stencil(&_cb->_c, _ds && _ds->_stencil, _ds ? _ds->_sf : off, _ds ? _ds->_sb : off);
     if (!_hasRef) { nvmtl_vk_cmd_set_stencil_ref(&_cb->_c, 0, 0); _hasRef = YES; }
+}
+// macOS 26: a logical-to-physical colour attachment map. Measured on Apple GPUs, a Metal 3 encoder accepts it and nothing
+// changes, because a Metal 3 render pipeline always uses the identity mapping (only Metal 4 pipelines inherit the map).
+// Without the method the call is an unrecognized selector and the app stops.
+- (void)setColorAttachmentMap:(id)map {
+    static int said;
+    if (map && !said++) nvlog("render encoder setColorAttachmentMap: a Metal 3 pipeline uses the identity mapping, so the map has no effect, as on Apple GPUs (said once)");
 }
 - (void)setRenderPipelineState:(id<MTLRenderPipelineState>)ps {
     // The same pipeline again inside a begun pass changes nothing: Apple's OpenGL renderer sets it before every draw, so
@@ -4245,7 +4273,11 @@ static NSUInteger nvmtl_env_uint(NSString *k, NSUInteger dflt) {
     return s.length ? (NSUInteger)s.integerValue : dflt;
 }
 static NSUInteger nvmtl_compute_maxt(void) { static NSUInteger v; if (!v) v = nvmtl_env_uint(@"NVMTL_MAXT", 1024); return v; }
-- (NSUInteger)maxTotalThreadsPerThreadgroup { NSUInteger v = nvmtl_compute_maxt(), n = _attrT ?: _askT; return n && n < v ? n : v; }
+// A required threadgroup size fixes the total too: Apple answers 64 for a pipeline that requires 64x1x1.
+- (NSUInteger)maxTotalThreadsPerThreadgroup { NSUInteger v = nvmtl_compute_maxt(), n = _attrT ?: _askT;
+    NSUInteger rq = _reqTG.width * _reqTG.height * _reqTG.depth; if (rq && (!n || rq < n)) n = rq;
+    return n && n < v ? n : v; }
+- (MTLSize)requiredThreadsPerThreadgroup { return _reqTG; }
 - (NSUInteger)threadExecutionWidth { static NSUInteger v; if (!v) v = nvmtl_env_uint(@"NVMTL_TEW", 32); return v; }
 - (NSUInteger)staticThreadgroupMemoryLength { return 0; }
 - (NSString *)label { return _label; }

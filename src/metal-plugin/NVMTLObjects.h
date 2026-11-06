@@ -278,6 +278,19 @@ void nvmtl_texture_desc_swizzle(NVMTLTexture *t, MTLTextureDescriptor *d);
 // _sassKernel: machine code that runs before the Vulkan pipeline; _sassOnly: there is no Vulkan pipeline
 @interface NVMTLComputePipelineState () { @public id _sassKernel; BOOL _sassOnly; } @end
 @interface NVMTLRenderPipelineState () { @public uint64_t _resid; } @end
+// macOS 26 required threadgroup sizes, as the pipeline descriptor gave them (0x0x0 = not set). Apps read them back from
+// the pipeline; without the getters the read is an unrecognized selector and the app stops.
+@interface NVMTLRenderPipelineState () { @public MTLSize _reqObj, _reqMesh; } @end
+@interface NVMTLComputePipelineState () { @public MTLSize _reqTG; } @end
+// A descriptor's MTLSize property that exists only on macOS 26 and later: read by key so the plugin, built for macOS 15,
+// needs no availability check and gets 0x0x0 on an older system that has no such property.
+static inline MTLSize nvmtl_desc_size(id d, SEL sel) {
+    MTLSize s = { 0, 0, 0 };
+    if (!d || ![d respondsToSelector:sel]) return s;
+    id v = [d valueForKey:NSStringFromSelector(sel)];
+    if ([v isKindOfClass:[NSValue class]] && !strcmp([(NSValue *)v objCType], @encode(MTLSize))) [(NSValue *)v getValue:&s size:sizeof s];
+    return s;
+}
 @interface NVMTLIndirectCommandBuffer () { @public uint64_t _resid; } @end
 @interface NVMTLIndirectCommand () - (void)nvmtlCopyFrom:(NVMTLIndirectCommand *)o; @end
 NSUInteger nvmtl_air_max_tg(NVMTLFunction *fn);

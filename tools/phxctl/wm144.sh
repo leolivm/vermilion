@@ -33,6 +33,13 @@ r() { sudo -n "$P" regs "$1" | awk '{print $2}'; }
 set_wm() { b=$1; w $(printf 0x%X $b) $2; w $(printf 0x%X $((b + 2))) $4; w $(printf 0x%X $((b + 7))) $9; w $(printf 0x%X $((b + 8))) ${10}
   w $(printf 0x%X $((b + 3))) $5; w $(printf 0x%X $((b + 4))) $6; w $(printf 0x%X $((b + 5))) $7; w $(printf 0x%X $((b + 6))) $8
   w $(printf 0x%X $((b + 1))) $3; }
+# Stutter guard (Linux c82b8f96eb9): reprogramming watermarks with stutter allowed can destabilize GC 11.0.0. Every write
+# mode refuses unless DCHUBBUB_ARB_DRAM_STATE_CNTL (0x39BC) has stutter forced off (low bits = 2). `show` only reads.
+case "${1:-}" in
+  linux|linux2|linux144x2|linux144a60|linux60a165|linux144a165|gop)
+    sa=$(r 0x39BC); case "$sa" in 0x*) ;; *) echo "wm144: REFUSED: cannot read 0x39BC ('$sa')" >&2; exit 3 ;; esac
+    [ $(( sa & 3 )) -eq 2 ] || { echo "wm144: REFUSED: stutter allowed (0x39BC $sa), no watermark written" >&2; exit 3; } ;;
+esac
 case "${1:-}" in
   show) a=$((0x39BC)); while [ $a -le $((0x39E5)) ]; do printf '0x%X DCHUBBUB+0x%x %s\n' $a $((a - 0x34C0)) "$(r $(printf 0x%X $a))"; a=$((a + 1)); done ;;
   linux)

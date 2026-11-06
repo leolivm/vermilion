@@ -217,6 +217,7 @@ aoc60() {
     step wm60a165 sh "$G/wm144.sh" linux60a165 || return 1
     grp HUBP0 "$AOC60_HUBP0_A165" c2 || true
     echo "b15: $(date '+%T') AOC 60 + Acer 165: UCLK pinned 456, watermarks linux60a165, stutter forced off ($(r 0x39BC))"; return 0; fi
+  sa=$(r 0x39BC); [ $(( sa & 3 )) -eq 2 ] || w 0x39BC $(printf 0x%X $(( (sa & ~3) | 2 )))
   step wm144_2 sh "$G/wm144.sh" linux2 || return 1
   echo "b15: $(date '+%T') AOC back at 60 (Acer OTG1 H_TOTAL $(r 0x506A)): watermarks linux2, UCLK stays pinned and stutter off until the next boot"; }
 # p0solo: OTG1-3 all dark (one display)
