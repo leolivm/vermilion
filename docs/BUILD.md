@@ -31,6 +31,7 @@ bash tests/mock/m7test.sh         # second monitor at boot (m7_boot.sh, m7_phase
 bash tests/mock/dettest.sh        # det.sh
 bash tests/mock/phxctl_serve_test.sh
 bash tests/mock/faultdef_test.sh  # GFX hub fault default page sequence (src/vermilion-boot/PhxFaultDef.h)
+bash tests/mock/fd3_shader_test.sh  # submit_test fd3 shader probe encodings and IB (tools/phxctl/fd3_shader.h)
 ```
 The mutation runners (`*_mut.sh`, `hotplug0_mut.py`) check that the suites catch broken variants; see
 [`../tests/mock/README.md`](../tests/mock/README.md). `p0prefetch_test.sh` needs a register dump of the target

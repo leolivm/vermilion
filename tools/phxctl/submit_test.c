@@ -12,11 +12,21 @@
 //                                        debug.phxfaultdef_fill pattern), target[1] = the marker.
 //   submit_test fd2                      WRITE_DATA 0xC0FFEE01 to the unmapped VA, then the marker. PASS = fence retired,
 //                                        the marker, and debug.phxfaultdef_stat shows 0xC0FFEE01 at the VA's page offset.
+//   submit_test fd3                      FD-3, the SHADER path (UTCL2 client TCP, as the 11-12 hang): one gfx11 compute wave
+//                                        (fd3_shader.h) does global_store_b32 0xC0FFEE03 to the unmapped VA (default
+//                                        0x100008140), s_waitcnt_vscnt 0, then global_store_b32 the marker 0x5EED0003
+//                                        into target[1]. PASS = fence retired, the marker, debug.phxfaultdef_stat shows
+//                                        0xC0FFEE03 at the VA's page offset (+0x140), STATUS CID 8 RW 1 at the VA's page.
+//   submit_test fd3ok                    the no-fault control of fd3: the same shader, the first store into target[2]
+//                                        (mapped). Needs no gate. PASS = fence retired, target[2] = 0xC0FFEE03, the
+//                                        marker. Run it first: it proves a hand-made wave runs on this queue at all.
 //   options: va=0x... (the unmapped VA), timeout_ms=N (<= 2000), dry (print the IB, submit nothing), force (submit even
-//            with debug.phxfaultdef off or CNTL not 0x1FFE: the gate-off control run, expected to hang GFX)
-// Both print the target dwords, the fence result, the fault STATUS / ADDR / CNTL / DEFAULT_ADDR, GRBM_STATUS polled for
+//            with debug.phxfaultdef off or CNTL not 0x1FFE: the gate-off control run, expected to hang GFX), gfx
+//            (fd3/fd3ok: submit as a GFX IB, the queue of the 11-12 hang, instead of COMPUTE)
+// All print the target dwords, the fence result, the fault STATUS / ADDR / CNTL / DEFAULT_ADDR, GRBM_STATUS polled for
 // GUI_ACTIVE 0 over 1 s, and debug.phxfaultdef_stat before and after. Exit 0 = PASS, 2 = wrong data, 3 = fence not
-// retired, 4 = refused (gate off), 1 = setup error.
+// retired, 4 = refused (gate off), 1 = setup error. fd3 exits 2 also when the data is right but STATUS does not show
+// the TCP write fault at the probe page.
 // build: clang -arch x86_64 -O2 -o submit_test submit_test.c -framework IOKit -framework CoreFoundation
 #include <IOKit/IOKitLib.h>
 #include <stdint.h>
@@ -27,6 +37,7 @@
 #include <sys/sysctl.h>
 #include <assert.h>   // static_assert in PhxNativeABI.h
 #include "../../src/vermilion-boot/PhxNativeABI.h"
+#include "fd3_shader.h"
 
 static io_connect_t c;
 
@@ -68,17 +79,20 @@ static void stat_line(const char *when, char *buf, size_t n)
    printf("%s: debug.phxfaultdef=%d\n  stat: %s\n", when, on, buf);
 }
 
-static void fault_regs(const char *when, uint64_t probe_va)
+// fills sto[3] = STATUS, ADDR LO, ADDR HI when given; returns 0 when the registers were read
+static int fault_regs(const char *when, uint64_t probe_va, uint32_t *sto)
 {
    uint32_t cntl = 0, def[2] = {0}, st[3] = {0};
    if (regs(0x2824, 1, &cntl) || regs(0x282b, 2, def) || regs(0x2828, 3, st)) {
       printf("%s: READREGS refused (run as root)\n", when);
-      return;
+      return -1;
    }
+   if (sto) { sto[0] = st[0]; sto[1] = st[1]; sto[2] = st[2]; }
    const uint64_t fva = ((((uint64_t)(st[2] & 0xF)) << 32) | st[1]) << 12;
    printf("%s: CNTL 0x%08x DEFAULT_ADDR 0x%x_%08x; STATUS 0x%08x (VMID %u CID %u RW %u mapping %u) ADDR VA 0x%llx%s\n", when,
           cntl, def[1], def[0], st[0], (st[0] >> 20) & 0xF, (st[0] >> 9) & 0x1FF, (st[0] >> 18) & 1, (st[0] >> 8) & 1,
           (unsigned long long)fva, st[0] && fva == (probe_va & ~0xFFFull) ? " = the probe VA's page" : "");
+   return 0;
 }
 
 static void grbm_poll(void)
@@ -94,19 +108,24 @@ static void grbm_poll(void)
 
 int main(int argc, char **argv)
 {
-   int mode = 0, dry = 0, force = 0;
+   int mode = 0, dry = 0, force = 0, gfx = 0, va_set = 0;
    uint32_t expect = 0xFDFDFDFDu, timeout_ms = 2000;
    uint64_t hole = 0x100008100ull;
    for (int i = 1; i < argc; i++) {
       if (!strcmp(argv[i], "fd1")) mode = 1;
       else if (!strcmp(argv[i], "fd2")) mode = 2;
+      else if (!strcmp(argv[i], "fd3")) mode = 3;
+      else if (!strcmp(argv[i], "fd3ok")) mode = 4;
+      else if (!strcmp(argv[i], "gfx")) gfx = 1;
       else if (!strcmp(argv[i], "dry")) dry = 1;
       else if (!strcmp(argv[i], "force")) force = 1;
       else if (!strncmp(argv[i], "expect=", 7)) expect = (uint32_t)strtoul(argv[i] + 7, NULL, 0);
-      else if (!strncmp(argv[i], "va=", 3)) hole = strtoull(argv[i] + 3, NULL, 0);
+      else if (!strncmp(argv[i], "va=", 3)) { hole = strtoull(argv[i] + 3, NULL, 0); va_set = 1; }
       else if (!strncmp(argv[i], "timeout_ms=", 11)) timeout_ms = (uint32_t)strtoul(argv[i] + 11, NULL, 0);
-      else { printf("usage: submit_test [fd1|fd2] [expect=0x..] [va=0x..] [timeout_ms=N] [dry] [force]\n"); return 1; }
+      else { printf("usage: submit_test [fd1|fd2|fd3|fd3ok] [expect=0x..] [va=0x..] [timeout_ms=N] [dry] [force] [gfx]\n"); return 1; }
    }
+   if (gfx && mode < 3) { printf("gfx: fd3 / fd3ok only\n"); return 1; }
+   if (mode == 3 && !va_set) hole = 0x100008140ull;   // FD-3: the leaf and page of fd1/fd2, its own dword (+0x140)
    if (timeout_ms > 2000) timeout_ms = 2000;
    const uint64_t IBVA = 0x100000000ull, TGVA = 0x100010000ull;
    if (mode && ((hole & 3) || (hole >= IBVA && hole < IBVA + 4096) || (hole >= TGVA && hole < TGVA + 4096))) {
@@ -122,14 +141,15 @@ int main(int argc, char **argv)
    if (kr) return 1;
 
    char sbuf[1024];
+   uint32_t st_before[3] = {0}, st_after[3] = {0};
    if (mode) {
       stat_line("before", sbuf, sizeof sbuf);
-      fault_regs("before", hole);
+      fault_regs("before", hole, st_before);
       uint32_t cntl = 0;
       int on = 0; size_t ol = sizeof on;
       if (sysctlbyname("debug.phxfaultdef", &on, &ol, NULL, 0)) on = 0;
       if (regs(0x2824, 1, &cntl)) cntl = 0;
-      if ((on != 1 || cntl != 0x1FFEu) && !force && !dry) {
+      if (mode != 4 && (on != 1 || cntl != 0x1FFEu) && !force && !dry) {
          printf("REFUSED: debug.phxfaultdef=%d CNTL 0x%08x (want 1 / 0x00001ffe); a fault with the gate off is expected to hang GFX. 'force' overrides.\n", on, cntl);
          return 4;
       }
@@ -149,7 +169,19 @@ int main(int argc, char **argv)
    uint32_t *p = (uint32_t *)(uintptr_t)ibp;
    uint32_t n = 0;
    const uint64_t MARK = TGVA + 4;
-   if (mode == 0) {
+   if (mode >= 3) {
+      const uint64_t SHVA = IBVA + 0x800, store = mode == 3 ? hole : TGVA + 8;
+      t[0] = 0x5EED5EEDu; t[1] = 0; t[2] = 0x5EED5EEDu;
+      uint32_t *sh = p + 0x200, shn = fd3_shader(sh);
+      n = fd3_ib(p, SHVA, store, MARK);
+      printf("%s: shader VA 0x%llx, store VA 0x%llx (page offset 0x%llx), marker VA 0x%llx, ip %s\n",
+             mode == 3 ? "FD-3 shader store to the unmapped VA" : "FD-3 control (store to target[2], mapped)",
+             (unsigned long long)SHVA, (unsigned long long)store, (unsigned long long)(store & 0xFFF), (unsigned long long)MARK,
+             gfx ? "GFX" : "COMPUTE");
+      printf("shader (%u dw):", shn);
+      for (uint32_t i = 0; i < shn; i++) printf(" %08x", sh[i]);
+      printf("\n");
+   } else if (mode == 0) {
       t[0] = 0;
       p[n++] = 0xC0033700; p[n++] = 0x00100500; p[n++] = (uint32_t)TGVA; p[n++] = (uint32_t)(TGVA >> 32); p[n++] = 0x5EED0001;
    } else {
@@ -175,7 +207,7 @@ int main(int argc, char **argv)
    struct { struct phxn_cs_in h; struct phxn_cs_ib ib[1]; } req;
    memset(&req, 0, sizeof req);
    req.h.abi = PHXN_ABI_VERSION; req.h.ctx_id = co.op; req.h.num_ibs = 1;
-   req.ib[0].va_start = IBVA; req.ib[0].ib_bytes = n * 4; req.ib[0].ip_type = PHX_AMDGPU_HW_IP_COMPUTE;
+   req.ib[0].va_start = IBVA; req.ib[0].ib_bytes = n * 4; req.ib[0].ip_type = gfx ? PHX_AMDGPU_HW_IP_GFX : PHX_AMDGPU_HW_IP_COMPUTE;
    uint64_t seq = 0; uint32_t sn = 1;
    kr = IOConnectCallMethod(c, PHXN_SEL_SUBMIT, NULL, 0, &req, sizeof req, &seq, &sn, NULL, NULL);
    printf("submit kr 0x%x seq %llu\n", kr, (unsigned long long)seq);
@@ -191,12 +223,41 @@ int main(int argc, char **argv)
       return t[0] == 0x5EED0001 ? 0 : 2;
    }
 
-   printf("target[0] = 0x%08x (%s), target[1] = 0x%08x (marker, want 5eed0002)\n", t[0],
-          mode == 1 ? "want the fill pattern" : "want 5eed5eed, untouched", t[1]);
-   fault_regs("after", hole);
+   const uint32_t want_mark = mode >= 3 ? FD3_MARKER : 0x5EED0002u;
+   printf("target[0] = 0x%08x (%s), target[1] = 0x%08x (marker, want %08x)", t[0],
+          mode == 1 ? "want the fill pattern" : "want 5eed5eed, untouched", t[1], want_mark);
+   if (mode >= 3) printf(", target[2] = 0x%08x (want %s)", t[2], mode == 4 ? "c0ffee03" : "5eed5eed, untouched");
+   printf("\n");
+   const int regs_ok = !fault_regs("after", hole, st_after);
    grbm_poll();
    stat_line("after", sbuf, sizeof sbuf);
    if (!reached) { printf("RESULT: FAIL (fence not retired within %u ms)\n", timeout_ms); return 3; }
+   if (mode == 4) {
+      const int ok = t[1] == FD3_MARKER && t[2] == FD3_VALUE && t[0] == 0x5EED5EEDu;
+      printf("STATUS %s by this run (before 0x%08x, after 0x%08x)\n",
+             st_before[0] == st_after[0] && st_before[1] == st_after[1] ? "unchanged" : "CHANGED", st_before[0], st_after[0]);
+      printf("RESULT: %s (shader store %s, marker %s)\n", ok ? "PASS" : "FAIL", t[2] == FD3_VALUE ? "ok" : "missing",
+             t[1] == FD3_MARKER ? "ok" : "missing");
+      return ok ? 0 : 2;
+   }
+   if (mode == 3) {
+      unsigned off = 0, val = 0;
+      const char *f = strstr(sbuf, "first at +");
+      const int got = f && sscanf(f, "first at +0x%x = 0x%x", &off, &val) == 2;
+      const int inpage = got && off == (unsigned)(hole & 0xFFF) && val == FD3_VALUE;
+      const uint64_t fva = ((((uint64_t)(st_after[2] & 0xF)) << 32) | st_after[1]) << 12;
+      const unsigned vmid = (st_after[0] >> 20) & 0xF, cid = (st_after[0] >> 9) & 0x1FF, rw = (st_after[0] >> 18) & 1;
+      const int st_ok = regs_ok && cid == 8 && rw == 1 && vmid >= 8 && fva == (hole & ~0xFFFull);
+      printf("default page: %s\n", got ? (inpage ? "0xC0FFEE03 at the probe VA's page offset" : "a different first dword (see stat)")
+                                        : "no dword differs from the fill");
+      printf("STATUS: %s (CID %u RW %u VMID %u page 0x%llx; want CID 8 TCP, RW 1, VMID 8-15, page 0x%llx)\n",
+             st_ok ? "the TCP write fault at the probe page" : "NOT the expected fault", cid, rw, vmid, (unsigned long long)fva,
+             (unsigned long long)(hole & ~0xFFFull));
+      const int ok = t[1] == FD3_MARKER && t[0] == 0x5EED5EEDu && t[2] == 0x5EED5EEDu && inpage && st_ok;
+      printf("RESULT: %s (marker %s, page %s, STATUS %s)\n", ok ? "PASS" : "FAIL", t[1] == FD3_MARKER ? "ok" : "missing",
+             inpage ? "ok" : "not seen", st_ok ? "ok" : "no");
+      return ok ? 0 : 2;
+   }
    int okd = t[1] == 0x5EED0002u;
    if (mode == 1) {
       okd = okd && t[0] == expect;
