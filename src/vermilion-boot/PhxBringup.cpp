@@ -34,6 +34,7 @@
 #include "PhxNativeABI.h"
 #include "PhxVmTables.h"
 #include "PhxFaultDef.h"   // b126 GFX hub fault default page (phx_vm.cpp)
+#include "PhxRecover.h"    // b127 automatic recovery of a fault-stalled queue (phx_recover.cpp)
 #include "phx_regs_dcn32.h"
 #include "PhxDdc.h"
 #include "PhxEdid.h"
@@ -64,7 +65,7 @@ extern struct sysctl_oid sysctl__debug_phxdpwatch, sysctl__debug_phxdpwatch_stat
 static void phxDpWatchStop();   // b120, phx_dpwatch.cpp: called by stop()
 static void phxC3LatchPowerOn(uint32_t gpioA);   // b113, phx_pipe2.cpp: called by start() (debug.phxpoweron, gate G1)
 
-#define PHX_KEXT_BUILD 126u  // bump for every kext build; what each build changed: CHANGELOG.md (newest first)
+#define PHX_KEXT_BUILD 127u  // bump for every kext build; what each build changed: CHANGELOG.md (newest first)
 
 // The kext is ONE translation unit: the files below hold its code by function and are included here, in this
 // order (the order is the original single-file order; moving code between them must keep it). build.sh compiles
@@ -74,6 +75,7 @@ static void phxC3LatchPowerOn(uint32_t gpioA);   // b113, phx_pipe2.cpp: called 
 #include "phx_sysctl.cpp"
 #include "phx_core.cpp"
 #include "phx_vm.cpp"
+#include "phx_recover.cpp"   // b127
 #include "phx_ih_irq.cpp"
 #include "phx_vcn_mmhub.cpp"
 #include "phx_scan.cpp"

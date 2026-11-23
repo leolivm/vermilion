@@ -3,8 +3,8 @@
 # faultdef_test.sh: FD-0, the host test of debug.phxfaultdef (kext b126, src/vermilion-boot/PhxFaultDef.h). NO
 # hardware. 1) faultdef_test.cpp runs the header's enable / disable / page scan against a register recorder (write
 # order, CNTL 0x2 -> 0x1FFE, refusals that write nothing, teardown in reverse, never MMHUB). 2) Source checks on the
-# kext glue: boot default 0, nothing in claimAccel or start, sysctls registered and unregistered, the GC-only flush,
-# the page freed only after the bits read back off. 3) Mutations of the header, each must be CAUGHT.
+# kext glue: boot default 0, claimAccel only behind the boot-arg phxfaultdef=1 (b127), not in start, sysctls
+# registered and unregistered, the GC-only flush, the page freed only after the bits read back off. 3) Mutations of the header, each must be CAUGHT.
 # Exit 0 iff all pass.   bash tests/mock/faultdef_test.sh
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd); SRC=${FD_SRC:-$HERE/../../src/vermilion-boot}
@@ -25,7 +25,8 @@ fi
 VM=$SRC/phx_vm.cpp; SY=$SRC/phx_sysctl.cpp; CO=$SRC/phx_core.cpp; CL=$SRC/phx_client.cpp
 fd_body() { awk '/^int PhxBringup::faultDefCtl/,/^}/' "$VM"; }
 ok boot_default_off 'grep -q "^static int gFdOn = 0" "$SY" && grep -q "^static unsigned int gFdFill = 0" "$SY"'
-ok not_in_claim_or_start '! awk "/^IOReturn PhxBringup::claimAccel/,/^}/" "$VM" | grep -q faultDef && ! awk "/^bool PhxBringup::start/,/^}/" "$CO" | grep -q faultDef'
+# b127: claimAccel turns it on only behind the boot-arg phxfaultdef=1 (gFdBoot), start never
+ok not_in_claim_or_start '[ "$(awk "/^IOReturn PhxBringup::claimAccel/,/^}/" "$VM" | grep -c faultDef)" = 1 ] && awk "/^IOReturn PhxBringup::claimAccel/,/^}/" "$VM" | grep -B1 "faultDefCtl(1)" | grep -q "if (gFdBoot == 1 && !gFdOn)" && ! awk "/^bool PhxBringup::start/,/^}/" "$CO" | grep -q faultDef'
 ok sysctls_registered '[ "$(grep -c "sysctl_register_oid(&sysctl__debug_phxfaultdef" "$CL")" = 3 ] && [ "$(grep -o "sysctl_unregister_oid(&sysctl__debug_phxfaultdef[a-z_]*)" "$CO" | wc -l | tr -d " ")" = 3 ]'
 ok gc_flush_only '! fd_body | grep -q "vmFlushTlb\|mmhubFlush\|kMm" && ! awk "/^void PhxBringup::faultDefQuiesce/,/^}/" "$VM" | grep -q "vmFlushTlb\|mmhubFlush\|kMm"'
 ok no_semaphore_regs '! grep -qi "0x1A75[1-9a-f]\|0x1A76[0-2]" "$SRC/PhxFaultDef.h"'

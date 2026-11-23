@@ -120,6 +120,7 @@ IOReturn PhxBringup::gpuSubmit(uint32_t handle, bool gfx, const uint64_t *ibVa, 
     q.wptr += k;
     q.fseq[q.tail & 63] = seq;
     q.fend[q.tail & 63] = q.wptr;
+    q.fvmid[q.tail & 63] = static_cast<uint8_t>(vmid);   // b127: debug.phxrecover's ownership check
     __asm__ __volatile__("" ::: "memory");
     q.tail = q.tail + 1;
     // BAR0 is write-combined: drain the WC buffers so the packets are in VRAM before the CP is told about them

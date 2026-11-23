@@ -91,6 +91,9 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
         sysctl_register_oid(&sysctl__debug_phxfaultdef);   // b126
         sysctl_register_oid(&sysctl__debug_phxfaultdef_fill);
         sysctl_register_oid(&sysctl__debug_phxfaultdef_stat);
+        sysctl_register_oid(&sysctl__debug_phxrecover);   // b127
+        sysctl_register_oid(&sysctl__debug_phxrecover_ms);
+        sysctl_register_oid(&sysctl__debug_phxrecover_stat);
         sysctl_register_oid(&sysctl__debug_phxbo_stats);
         sysctl_register_oid(&sysctl__debug_phxwait_step_us);
         sysctl_register_oid(&sysctl__debug_phxwait_scoped);
@@ -602,8 +605,10 @@ void IOAccelPhxNativeClient::reap() {
 }
 
 bool IOAccelPhxNativeClient::waitRetired(uint64_t s, const char *why) {
-    for (int i = 0; i < 20000 && owner->gpuRetired() < s; i++)
+    for (int i = 0; i < 20000 && owner->gpuRetired() < s; i++) {
+        owner->recoverPoll();   // b127: the client lock is held, never gpuLock (lock order client -> gpuLock)
         IODelay(100);
+    }
     if (owner->gpuRetired() >= s)
         return true;
     OSIncrementAtomic(&gDeferWaitTimeouts);
@@ -776,7 +781,11 @@ IOReturn IOAccelPhxNativeClient::doCtx(IOExternalMethodArguments *a) {
         if (in.ctx_id == 0 || in.ctx_id > PHXN_MAX_CTX || !ctx[in.ctx_id])
             return kIOReturnNotFound;
         ctx[in.ctx_id] = false;
-    } else if (in.op != PHX_AMDGPU_CTX_OP_QUERY_STATE2) {
+    } else if (in.op == PHX_AMDGPU_CTX_OP_QUERY_STATE2) {
+        // b127: a context debug.phxrecover killed reports a guilty reset (RADV: device lost); qword 0 = the flags
+        if (vmid && owner->ctxLost(vmid))
+            out.op = PHX_AMDGPU_CTX_QUERY2_FLAGS_RESET | PHX_AMDGPU_CTX_QUERY2_FLAGS_GUILTY;
+    } else {
         return kIOReturnBadArgument;
     }
     bcopy(&out, a->structureOutput, sizeof(out));
@@ -851,6 +860,11 @@ IOReturn IOAccelPhxNativeClient::doSubmit(IOExternalMethodArguments *a) {
     }
 
     if (owner->gpuReady()) {
+        // b127: debug.phxrecover killed this context's waves: nothing more runs for it (the shim's device lost)
+        if (vmid && owner->ctxLost(vmid)) {
+            OSIncrementAtomic(reinterpret_cast<volatile SInt32 *>(&gRecLostSubmits));
+            return kIOReturnAborted;
+        }
         // E8: real execution on the adopted compute queue, IBs run in VMID 8
         uint64_t va[PHXN_MAX_IBS];
         uint32_t dw[PHXN_MAX_IBS];

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // phx_sysctl.cpp: service-wide state and the debug.* sysctls (phxcalls, phxbo_*, phxgva, phxih*, phxirq*, phxvcn*,
-// phxmmvm*, phxfaultdef*, phxwait_*, phxdal_*, phxscan_latchfix/race_stat, phxvm, phxpt_stat, phxshot, phxedid*).
+// phxmmvm*, phxfaultdef*, phxrecover*, phxwait_*, phxdal_*, phxscan_latchfix/race_stat, phxvm, phxpt_stat, phxshot, phxedid*).
 // Part of the PhxBringup.cpp translation unit (included there, in order); not compiled on its own.
 
 
@@ -244,6 +244,56 @@ static IOReturn phxFdPowerHandler(void *, void *, UInt32 type, IOService *, void
         gPhx->faultDefQuiesce();
     return kIOReturnSuccess;
 }
+// b127: the boot-arg phxfaultdef=1 turns debug.phxfaultdef on at the claim (claimAccel), before PhxAccel or WindowServer
+// submit anything; without it the boot default stays 0 (b126 behaviour)
+static int gFdBoot = 0;
+// b127 (lab KILL-DRAINED-PASS-1123): automatic recovery of a queue stalled by a shader fault. debug.phxrecover=1 (live,
+// root; boot-arg phxrecover=1 for the boot default; default 0 = b126 behaviour): when the fence waits see the global
+// retired stuck for debug.phxrecover_ms with work pending, the GFX hub's latched fault names a user VMID (8-15) that ran
+// the head of a stalled queue and points at a live context, and debug.phxfaultdef is 1, the kext kills that VMID's waves
+// (SQ_CMD KILL | BROADCAST | CHECK_VMID, once per ms for up to 10 ms until retired moves), clears the latched status
+// and marks the context lost (its later submissions fail). Never a reset; a kill that does not unstick is counted and
+// logged only. PhxRecover.h holds the decision and the register sequences (host test tests/mock/recover_test.sh).
+static int gRecOn = 0, gRecMs = 2000, gRecBoot = 0;
+static IOLock *gRecLock;
+static phxrec::Stall gRecStall;
+static uint32_t gRecRecoveries, gRecKills, gRecFailures, gRecRefused[phxrec::kRecover + 1], gRecLostSubmits;
+struct PhxRecLast {
+    uint64_t upNs;
+    clock_sec_t epoch;
+    int verdict, kill, pid;
+    uint32_t vmid, ctx, status, addrLo, addrHi, kills, killUs;
+    uint64_t stalledMs, retiredBefore, retiredAfter, emitted;
+    uint32_t statusAfter;
+    bool ws;
+    char name[20];
+};
+static PhxRecLast gRecLast, gRecLastRefusal;
+static int phxRecoverSysctl SYSCTL_HANDLER_ARGS {
+    int v = gRecOn;
+    const int err = sysctl_handle_int(oidp, &v, 0, req);
+    if (err || !req->newptr)
+        return err;
+    return gPhx ? gPhx->recoverCtl(v) : ENXIO;
+}
+SYSCTL_PROC(_debug, OID_AUTO, phxrecover, CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_LOCKED, nullptr, 0, phxRecoverSysctl, "I", "1 = kill the faulting VMID's waves when a queue stalls on a latched GFX hub fault (needs debug.phxfaultdef=1), 0 = off (b127)");
+static int phxRecoverMsSysctl SYSCTL_HANDLER_ARGS {
+    int v = gRecMs;
+    const int err = sysctl_handle_int(oidp, &v, 0, req);
+    if (err || !req->newptr)
+        return err;
+    if (v < 200 || v > 30000)   // below a slow frame / above WindowServer's own watchdog is no use
+        return EINVAL;
+    gRecMs = v;
+    return 0;
+}
+SYSCTL_PROC(_debug, OID_AUTO, phxrecover_ms, CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_LOCKED, nullptr, 0, phxRecoverMsSysctl, "I", "how long the global retired must stand still with work pending before debug.phxrecover acts (200-30000 ms, default 2000)");
+static int phxRecoverStatSysctl SYSCTL_HANDLER_ARGS {
+    char b[1536];
+    const int len = gPhx ? gPhx->recoverStat(b, sizeof b) : snprintf(b, sizeof b, "no PhxBringup");
+    return SYSCTL_OUT(req, b, static_cast<size_t>(len < 0 ? 0 : len >= static_cast<int>(sizeof b) ? static_cast<int>(sizeof b) - 1 : len) + 1);
+}
+SYSCTL_PROC(_debug, OID_AUTO, phxrecover_stat, CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_LOCKED, nullptr, 0, phxRecoverStatSysctl, "A", "debug.phxrecover: recoveries, kills, failures, refusals, the last recovery and refusal, lost contexts (b127)");
 // b63 (WP1 step 3): debug.phxwait_irq=1 makes WAITSEQ, after its spin, sleep on gFenceEvt with a 2 ms deadline instead
 // of b54's 50 us timed steps; the MSI filter calls thread_wakeup(&gFenceEvt) whenever it drained an EOP IV. Only used
 // while debug.phxirq and debug.phxeopirq are on and no storm was seen; otherwise the timed steps stay.

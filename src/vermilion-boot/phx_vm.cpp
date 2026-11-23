@@ -136,6 +136,7 @@ uint32_t PhxBringup::vmidAlloc() {
         c.used = 1;
         c.busy = true;
         c.hw = 0;
+        lost[i] = 0;   // b127: a context handed out again starts innocent
         PhxVmEnv e = vmEnv();
         phxvm::reset(e, c);   // b77: root only, nothing parked
         IOLockUnlock(gpuLock);
@@ -208,8 +209,10 @@ void PhxBringup::vmidFree(uint32_t handle, uint64_t lastSeq) {
     if (!vmCtx(handle))
         return;
     int waited = 0;
-    for (; waited < 2000 && gpuRetired() < lastSeq; waited++)
+    for (; waited < 2000 && gpuRetired() < lastSeq; waited++) {
+        recoverPoll();   // b127: no lock held here
         IOSleep(1);
+    }
     const uint64_t done = gpuRetired();
     {
         const VmCtx &cc = vm[handle - 1];
@@ -308,6 +311,12 @@ IOReturn PhxBringup::adoptQueue(const uint64_t in[6]) {
 IOReturn PhxBringup::claimAccel() {
     if (!pci || !gpuReady())
         return kIOReturnNotReady;
+    // b127: boot-arg phxfaultdef=1 = debug.phxfaultdef on from the claim, before PhxAccel (and WindowServer) can submit;
+    // a failure is logged (debug.phxfaultdef_stat keeps the error) and the claim goes on
+    if (gFdBoot == 1 && !gFdOn) {
+        const int fe = faultDefCtl(1);
+        IOLog("PhxBringup: boot-arg phxfaultdef=1: debug.phxfaultdef=1 at the claim -> %d\n", fe);
+    }
     pci->setProperty("nmxgpu-claimed", kOSBooleanTrue);
     pci->registerService();
     IOLog("PhxBringup: GPU claimed for PhxAccel, matching re-run\n");
@@ -317,8 +326,8 @@ IOReturn PhxBringup::claimAccel() {
 // ---- b126 H-FAULTDEF: the GFX hub's protection-fault default page (debug.phxfaultdef) ---------------------------
 // The register sequence is PhxFaultDef.h (host-tested). Here: the page, the idle wait and the bookkeeping. The page is
 // derived as gMmDummy and the system PTEs are (wired, physically contiguous, getPhysicalSegment with
-// kIOMemoryMapperNone), because GCVM_L2_CNTL pages defaults out to system memory. Live only for now: claimAccel is
-// where it becomes the boot default once the read, write and TCP probes (FD-1..FD-3) passed.
+// kIOMemoryMapperNone), because GCVM_L2_CNTL pages defaults out to system memory. Live, or from the claim with the
+// boot-arg phxfaultdef=1 (b127, claimAccel).
 namespace {
 struct PhxFdEnv {
     const PhxBringup *p;

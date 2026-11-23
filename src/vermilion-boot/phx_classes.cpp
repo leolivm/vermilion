@@ -126,6 +126,7 @@ private:
         uint32_t ringOff, ringDw, wbOff, fenceOff;
         uint64_t dbByte, wptr, doneEnd;
         uint64_t fseq[64], fend[64];
+        uint8_t fvmid[64];      // b127: the hardware VMID each entry ran in (debug.phxrecover's ownership check)
         volatile uint32_t head, tail;
     };
     GpuQueue gq[3]{};
@@ -147,6 +148,10 @@ private:
     // who owns each context, for the fault/stall diagnostics (set by the client in its own process context)
     int ctxPid[kMaxCtx]{};
     char ctxName[kMaxCtx][20]{};
+    // b127: a context whose VMID debug.phxrecover killed: its later submissions fail (kIOReturnAborted = the shim's
+    // device lost) and QUERY_STATE2 reports it guilty; cleared when vmidAlloc hands the context out again
+    volatile uint8_t lost[kMaxCtx]{};
+    uint32_t recoverOwned() const;   // VMIDs at the head of a stalled GC queue that point at a live context
 public:
     void vmTag(uint32_t handle, int pid, const char *name) {
         if (handle && handle <= kMaxCtx) { ctxPid[handle - 1] = pid; strlcpy(ctxName[handle - 1], name, sizeof ctxName[0]); } }
@@ -252,6 +257,12 @@ public:
     int faultDefCtl(int v);
     int faultDefStat(char *b, size_t n);
     void faultDefQuiesce();   // restart / power-off: the bits off, the page kept
+    // b127: automatic recovery of a queue stalled by a shader fault (debug.phxrecover, PhxRecover.h, phx_recover.cpp).
+    // recoverPoll is called by every fence wait loop that runs without gpuLock (it takes gpuLock itself)
+    void recoverPoll();
+    int recoverCtl(int v);
+    int recoverStat(char *b, size_t n);
+    bool ctxLost(uint32_t handle) const { return handle && handle <= kMaxCtx && lost[handle - 1]; }
     void irqFilter();
     // text dump of the GPU VM state for debug.phxvm
     int vmDump(char *b, size_t n) const {
@@ -452,7 +463,7 @@ private:
     // soon as the login session's apps started drawing (2026-10-24). Bounded like vmidFree (~2 s).
     bool waitGpuPastLast(const char *why) const {
         const uint64_t s = lastSeq;
-        for (int i = 0; i < 2000 && owner->gpuRetired() < s; i++) IOSleep(1);
+        for (int i = 0; i < 2000 && owner->gpuRetired() < s; i++) { owner->recoverPoll(); IOSleep(1); }
         const uint64_t d = owner->gpuRetired();
         if (d >= s) return true;
         OSIncrementAtomic(&gVmUnmapTimeouts);

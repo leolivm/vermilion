@@ -41,6 +41,14 @@ bool PhxBringup::start(IOService *provider) {
     if (!gWaitSleepLock) gWaitSleepLock = IOLockAlloc();
     uint32_t dbg = 0;
     debug = PE_parse_boot_argn("phxdebug", &dbg, sizeof(dbg)) && dbg == 1;
+    // b127: boot defaults of debug.phxfaultdef (applied at the claim, claimAccel) and debug.phxrecover; both 0 without
+    // the boot-args
+    if (!gRecLock) gRecLock = IOLockAlloc();
+    uint32_t ba = 0;
+    gFdBoot = PE_parse_boot_argn("phxfaultdef", &ba, sizeof(ba)) && ba == 1;
+    ba = 0;
+    gRecBoot = PE_parse_boot_argn("phxrecover", &ba, sizeof(ba)) && ba == 1;
+    if (gRecBoot) gRecOn = 1;
     if (mmio) {
         phxC3LatchPowerOn(rreg(0x05D89));   // b113: DC_GPIO_GENERIC_A before the boot clears bit 8 (debug.phxpoweron, debug.phxc3 G1)
         readFbLayout();
@@ -91,8 +99,9 @@ void PhxBringup::stop(IOService *provider) {
     if (gFdOn || gFdPage)
         faultDefCtl(0);
     if (gFdPage && !gFdOn) { gFdPage->complete(); gFdPage->release(); gFdPage = nullptr; }
+    gRecOn = 0;   // b127: no recovery from a waiter that outlives the service
     if (gSysctlUp) {
-        sysctl_unregister_oid(&sysctl__debug_phxbos_flush); sysctl_unregister_oid(&sysctl__debug_phxwait_spin_us); sysctl_unregister_oid(&sysctl__debug_phxbo_zero); sysctl_unregister_oid(&sysctl__debug_phxgva); sysctl_unregister_oid(&sysctl__debug_phxih); sysctl_unregister_oid(&sysctl__debug_phxih_stat); sysctl_unregister_oid(&sysctl__debug_phxeopirq); sysctl_unregister_oid(&sysctl__debug_phxih_vram); sysctl_unregister_oid(&sysctl__debug_phxirq); sysctl_unregister_oid(&sysctl__debug_phxirq_stat); sysctl_unregister_oid(&sysctl__debug_phxwait_irq); sysctl_unregister_oid(&sysctl__debug_phxwait_stat); sysctl_unregister_oid(&sysctl__debug_phxwait_lat); sysctl_unregister_oid(&sysctl__debug_phxwait_irq_dl_us); sysctl_unregister_oid(&sysctl__debug_phxvcn); sysctl_unregister_oid(&sysctl__debug_phxvcn_stat); sysctl_unregister_oid(&sysctl__debug_phxmmvm); sysctl_unregister_oid(&sysctl__debug_phxmmvm_stat); sysctl_unregister_oid(&sysctl__debug_phxfaultdef); sysctl_unregister_oid(&sysctl__debug_phxfaultdef_fill); sysctl_unregister_oid(&sysctl__debug_phxfaultdef_stat); sysctl_unregister_oid(&sysctl__debug_phxbo_stats); sysctl_unregister_oid(&sysctl__debug_phxwait_step_us); sysctl_unregister_oid(&sysctl__debug_phxwait_scoped); sysctl_unregister_oid(&sysctl__debug_phxwait_scoped_stat); sysctl_unregister_oid(&sysctl__debug_phxscan_latchfix); sysctl_unregister_oid(&sysctl__debug_phxscan_race_stat); sysctl_unregister_oid(&sysctl__debug_phxdal_dead); sysctl_unregister_oid(&sysctl__debug_phxdal_stat);
+        sysctl_unregister_oid(&sysctl__debug_phxbos_flush); sysctl_unregister_oid(&sysctl__debug_phxwait_spin_us); sysctl_unregister_oid(&sysctl__debug_phxbo_zero); sysctl_unregister_oid(&sysctl__debug_phxgva); sysctl_unregister_oid(&sysctl__debug_phxih); sysctl_unregister_oid(&sysctl__debug_phxih_stat); sysctl_unregister_oid(&sysctl__debug_phxeopirq); sysctl_unregister_oid(&sysctl__debug_phxih_vram); sysctl_unregister_oid(&sysctl__debug_phxirq); sysctl_unregister_oid(&sysctl__debug_phxirq_stat); sysctl_unregister_oid(&sysctl__debug_phxwait_irq); sysctl_unregister_oid(&sysctl__debug_phxwait_stat); sysctl_unregister_oid(&sysctl__debug_phxwait_lat); sysctl_unregister_oid(&sysctl__debug_phxwait_irq_dl_us); sysctl_unregister_oid(&sysctl__debug_phxvcn); sysctl_unregister_oid(&sysctl__debug_phxvcn_stat); sysctl_unregister_oid(&sysctl__debug_phxmmvm); sysctl_unregister_oid(&sysctl__debug_phxmmvm_stat); sysctl_unregister_oid(&sysctl__debug_phxfaultdef); sysctl_unregister_oid(&sysctl__debug_phxfaultdef_fill); sysctl_unregister_oid(&sysctl__debug_phxfaultdef_stat); sysctl_unregister_oid(&sysctl__debug_phxrecover); sysctl_unregister_oid(&sysctl__debug_phxrecover_ms); sysctl_unregister_oid(&sysctl__debug_phxrecover_stat); sysctl_unregister_oid(&sysctl__debug_phxbo_stats); sysctl_unregister_oid(&sysctl__debug_phxwait_step_us); sysctl_unregister_oid(&sysctl__debug_phxwait_scoped); sysctl_unregister_oid(&sysctl__debug_phxwait_scoped_stat); sysctl_unregister_oid(&sysctl__debug_phxscan_latchfix); sysctl_unregister_oid(&sysctl__debug_phxscan_race_stat); sysctl_unregister_oid(&sysctl__debug_phxdal_dead); sysctl_unregister_oid(&sysctl__debug_phxdal_stat);
         sysctl_unregister_oid(&sysctl__debug_phxbos_flush_bytes);
         sysctl_unregister_oid(&sysctl__debug_phxvm);
         sysctl_unregister_oid(&sysctl__debug_phxpt_reclaim);

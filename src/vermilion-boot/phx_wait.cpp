@@ -116,6 +116,7 @@ IOReturn IOAccelPhxNativeClient::doWaitSeq(IOExternalMethodArguments *a) {
                 IOLockSleepDeadline(gWaitSleepLock, &gWaitSleepLock, d, THREAD_UNINT);
                 IOLockUnlock(gWaitSleepLock);
             }
+            owner->recoverPoll();   // b127 debug.phxrecover: no lock is held here
             retired = owner->gpuRetiredMask(qm);
         }
         const bool reached = retired >= target;

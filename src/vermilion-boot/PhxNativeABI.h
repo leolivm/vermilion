@@ -201,6 +201,8 @@ enum {
 #define PHX_AMDGPU_CTX_OP_ALLOC_CTX    1u
 #define PHX_AMDGPU_CTX_OP_FREE_CTX     2u
 #define PHX_AMDGPU_CTX_OP_QUERY_STATE2 4u
+#define PHX_AMDGPU_CTX_QUERY2_FLAGS_RESET  (1u << 0)   /* QUERY_STATE2 out qword 0 (kext b127: a recovered context) */
+#define PHX_AMDGPU_CTX_QUERY2_FLAGS_GUILTY (1u << 2)
 #define PHX_AMDGPU_HW_IP_GFX 0u
 #define PHX_AMDGPU_HW_IP_COMPUTE 1u
 #define PHX_AMDGPU_HW_IP_VCN_ENC 7u
