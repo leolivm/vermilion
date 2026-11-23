@@ -30,6 +30,7 @@ bash tests/mock/b15test.sh        # display power recipe and watchdog (tools/phx
 bash tests/mock/m7test.sh         # second monitor at boot (m7_boot.sh, m7_phase.sh)
 bash tests/mock/dettest.sh        # det.sh
 bash tests/mock/phxctl_serve_test.sh
+bash tests/mock/faultdef_test.sh  # GFX hub fault default page sequence (src/vermilion-boot/PhxFaultDef.h)
 ```
 The mutation runners (`*_mut.sh`, `hotplug0_mut.py`) check that the suites catch broken variants; see
 [`../tests/mock/README.md`](../tests/mock/README.md). `p0prefetch_test.sh` needs a register dump of the target

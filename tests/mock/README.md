@@ -34,6 +34,7 @@ bash watchsrv_mut.sh           # 11 mutations of b15_boot.sh's watchdog read ser
 PAR=1 bash relight_mut.sh      # any runner / suite: PAR = how many at once (default 2), see "Cost knobs" below
 bash b15diff.sh OLD NEW [VAR=v] # decision diff of two b15_boot.sh versions over every b15test.sh scenario (logs, calls, writes, stub call counters)
 bash phxctl_serve_test.sh      # host test of `phxctl serve` (the read server; no kext needed: register items answer empty, sysctl items real) (9/9)
+bash faultdef_test.sh          # FD-0: debug.phxfaultdef (kext b126, PhxFaultDef.h) write order, CNTL 0x2 -> 0x1FFE, refusals, teardown, never MMHUB; glue source checks; 8 header mutations CAUGHT
 ./run.sh -k                    # keep the work dirs (to debug a FAIL)
 ./run.sh happy user_logged     # only the named scenarios
 DAEMON=/path/other.sh ./run.sh # test another daemon (used for mutation tests)

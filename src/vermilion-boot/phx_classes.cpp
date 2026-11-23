@@ -248,6 +248,10 @@ public:
     void mmhubFlush(uint32_t vmid) const;
     IOReturn gpuSubmitVcn(uint32_t handle, const uint64_t *ibVa, const uint32_t *ibDw, uint32_t n, uint64_t *seqOut);
     bool vcnSubmitReady() const;
+    // b126 H-FAULTDEF: the GFX hub's protection-fault default page (debug.phxfaultdef, PhxFaultDef.h, phx_vm.cpp)
+    int faultDefCtl(int v);
+    int faultDefStat(char *b, size_t n);
+    void faultDefQuiesce();   // restart / power-off: the bits off, the page kept
     void irqFilter();
     // text dump of the GPU VM state for debug.phxvm
     int vmDump(char *b, size_t n) const {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // phx_sysctl.cpp: service-wide state and the debug.* sysctls (phxcalls, phxbo_*, phxgva, phxih*, phxirq*, phxvcn*,
-// phxmmvm*, phxwait_*, phxdal_*, phxscan_latchfix/race_stat, phxvm, phxpt_stat, phxshot, phxedid*).
+// phxmmvm*, phxfaultdef*, phxwait_*, phxdal_*, phxscan_latchfix/race_stat, phxvm, phxpt_stat, phxshot, phxedid*).
 // Part of the PhxBringup.cpp translation unit (included there, in order); not compiled on its own.
 
 
@@ -211,6 +211,39 @@ static int phxMmvmStatSysctl SYSCTL_HANDLER_ARGS {
     return SYSCTL_OUT(req, b, static_cast<size_t>(len) + 1);
 }
 SYSCTL_PROC(_debug, OID_AUTO, phxmmvm_stat, CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_LOCKED, nullptr, 0, phxMmvmStatSysctl, "A", "MMHUB VM state (never reads the semaphore registers)");
+// b126 (H-FAULTDEF, agent-reports/gpu-fault-default-2026-11-23.md in the lab): mesboot gart() leaves the GFX hub with
+// no fault default (GCVM_L2_PROTECTION_FAULT_CNTL 0x2) and DEFAULT_ADDR on a VRAM page, and both GFX faults seen on
+// this card hung GFX. debug.phxfaultdef=1 gives the hub what Linux gives it: a wired 4 KiB system page as DEFAULT_ADDR
+// and the eleven *_ENABLE_DEFAULT bits (CNTL 0x1FFE), so a faulting access completes against that page. 0 restores
+// mesboot's values, then frees the page. Boot default 0: nothing changes until it is written (live, root).
+// debug.phxfaultdef_fill: the dword the page is filled with at the next 0 -> 1 (0 = zeroed; the FD-1 read probe).
+// debug.phxfaultdef_stat: the registers, the fault status/address, and the page's dwords that differ from the fill.
+static int gFdOn = 0, gFdLastErr = 0;
+static unsigned int gFdFill = 0, gFdFillUsed = 0;
+static IOBufferMemoryDescriptor *gFdPage;
+static uint64_t gFdPa;
+static uint32_t gFdOns, gFdOffs, gFdKept, gFdAckTimeouts, gFdAckMaxUs;
+static IONotifier *gFdPowerNotifier;
+static int phxFaultDefSysctl SYSCTL_HANDLER_ARGS {
+    int v = gFdOn;
+    const int err = sysctl_handle_int(oidp, &v, 0, req);
+    if (err || !req->newptr)
+        return err;
+    return gPhx ? gPhx->faultDefCtl(v) : ENXIO;
+}
+SYSCTL_PROC(_debug, OID_AUTO, phxfaultdef, CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_LOCKED, nullptr, 0, phxFaultDefSysctl, "I", "1 = GFX hub fault default page on (system page as DEFAULT_ADDR, CNTL 0x1FFE), 0 = mesboot's CNTL 0x2 / DEFAULT_ADDR 0xA3FF (b126)");
+SYSCTL_UINT(_debug, OID_AUTO, phxfaultdef_fill, CTLFLAG_RW | CTLFLAG_LOCKED, &gFdFill, 0, "dword pattern written over the fault default page at the next debug.phxfaultdef 0 -> 1 (0 = zeroed)");
+static int phxFaultDefStatSysctl SYSCTL_HANDLER_ARGS {
+    char b[640];
+    const int len = gPhx ? gPhx->faultDefStat(b, sizeof b) : snprintf(b, sizeof b, "no PhxBringup");
+    return SYSCTL_OUT(req, b, static_cast<size_t>(len < 0 ? 0 : len) + 1);
+}
+SYSCTL_PROC(_debug, OID_AUTO, phxfaultdef_stat, CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_LOCKED, nullptr, 0, phxFaultDefStatSysctl, "A", "GFX hub fault default: CNTL, DEFAULT_ADDR, fault STATUS/ADDR, the page and what landed in it (b126)");
+static IOReturn phxFdPowerHandler(void *, void *, UInt32 type, IOService *, void *, vm_size_t) {
+    if ((type == kIOMessageSystemWillRestart || type == kIOMessageSystemWillPowerOff) && gFdOn && gPhx)
+        gPhx->faultDefQuiesce();
+    return kIOReturnSuccess;
+}
 // b63 (WP1 step 3): debug.phxwait_irq=1 makes WAITSEQ, after its spin, sleep on gFenceEvt with a 2 ms deadline instead
 // of b54's 50 us timed steps; the MSI filter calls thread_wakeup(&gFenceEvt) whenever it drained an EOP IV. Only used
 // while debug.phxirq and debug.phxeopirq are on and no storm was seen; otherwise the timed steps stay.

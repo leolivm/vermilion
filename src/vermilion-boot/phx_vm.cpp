@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // phx_vm.cpp: GPU VM (E8): contexts, VMIDs, TLB flush (GC + MMHUB), map/unmap through PhxVmTables.h, debug.phxpt_stat,
-// plus adoptQueue (the compute/gfx ring adoption) and claimAccel.
+// plus adoptQueue (the compute/gfx ring adoption), claimAccel and the GFX hub fault default page (debug.phxfaultdef).
 // Part of the PhxBringup.cpp translation unit (included there, in order); not compiled on its own.
 
 // ---- E8: GPU execution ------------------------------------------------------------------------------------
@@ -312,6 +312,166 @@ IOReturn PhxBringup::claimAccel() {
     pci->registerService();
     IOLog("PhxBringup: GPU claimed for PhxAccel, matching re-run\n");
     return kIOReturnSuccess;
+}
+
+// ---- b126 H-FAULTDEF: the GFX hub's protection-fault default page (debug.phxfaultdef) ---------------------------
+// The register sequence is PhxFaultDef.h (host-tested). Here: the page, the idle wait and the bookkeeping. The page is
+// derived as gMmDummy and the system PTEs are (wired, physically contiguous, getPhysicalSegment with
+// kIOMemoryMapperNone), because GCVM_L2_CNTL pages defaults out to system memory. Live only for now: claimAccel is
+// where it becomes the boot default once the read, write and TCP probes (FD-1..FD-3) passed.
+namespace {
+struct PhxFdEnv {
+    const PhxBringup *p;
+    uint32_t (PhxBringup::*r)(uint32_t) const;
+    void (PhxBringup::*w)(uint32_t, uint32_t) const;
+    uint32_t rd(uint32_t reg) { return (p->*r)(reg); }
+    void wr(uint32_t reg, uint32_t v) { (p->*w)(reg, v); }
+    void delayUs(uint32_t us) { IODelay(us); }
+};
+
+void phxFdFill(IOBufferMemoryDescriptor *pg, uint32_t fill) {
+    volatile uint32_t *d = static_cast<volatile uint32_t *>(pg->getBytesNoCopy());
+    for (uint32_t i = 0; i < 1024; i++)
+        d[i] = fill;
+    for (uint32_t o = 0; o < 4096; o += 64)
+        flushLine(reinterpret_cast<const volatile uint8_t *>(d) + o);
+    __asm__ __volatile__("mfence" ::: "memory");
+}
+
+void phxFdNoteAck(bool acked, uint32_t us) {
+    if (!acked)
+        gFdAckTimeouts++;
+    if (us > gFdAckMaxUs)
+        gFdAckMaxUs = us;
+}
+}  // namespace
+
+// 1: the page (allocated outside the lock, filled with debug.phxfaultdef_fill), then under gpuLock with every queue
+// idle: DEFAULT_ADDR, CNTL 0x2 -> 0x1FFE, the GC engine 17 flush. 0: under gpuLock, CNTL 0x2, DEFAULT_ADDR 0xA3FF, the
+// flush; the page is freed only when CNTL read back without the bits and the GPU was idle, and kept (EBUSY) otherwise.
+int PhxBringup::faultDefCtl(int v) {
+    if (v != 0 && v != 1)
+        return EINVAL;
+    if (!mmio || !gpuLock || (v == 1 && !gpuReady()))
+        return ENXIO;
+    IOBufferMemoryDescriptor *fresh = nullptr, *drop = nullptr;
+    if (v == 1 && !gFdPage) {
+        fresh = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task, kIODirectionInOut | kIOMemoryPhysicallyContiguous,
+                                                                 4096, phxfd::kPageMask);
+        if (fresh && fresh->prepare() != kIOReturnSuccess)
+            OSSafeReleaseNULL(fresh);   // an unprepared descriptor: plain release
+    }
+    IOLockLock(gpuLock);
+    bool idle = false;
+    for (int spin = 0; spin <= 40000; spin++) {   // ~2 s, as vmBind: nothing new is submitted while gpuLock is held
+        if (gpuRetired() >= gSeq) { idle = true; break; }
+        IODelay(50);
+    }
+    PhxFdEnv e{this, &PhxBringup::rreg, &PhxBringup::wreg};
+    uint32_t us = 0;
+    bool acked = true;
+    int r = phxfd::kOk;
+    if (v == 1 && !gFdOn) {
+        if (!gFdPage) { gFdPage = fresh; fresh = nullptr; }
+        const uint64_t pa = gFdPage ? gFdPage->getPhysicalSegment(0, nullptr, kIOMemoryMapperNone) : 0;
+        if (gFdPage)
+            phxFdFill(gFdPage, gFdFill);
+        r = idle ? phxfd::enable(e, pa, &us, &acked) : phxfd::kBusy;
+        if (r == phxfd::kOk) {
+            gFdOn = 1;
+            gFdPa = pa;
+            gFdFillUsed = gFdFill;
+            gFdOns++;
+            phxFdNoteAck(acked, us);
+            if (!gFdPowerNotifier)
+                gFdPowerNotifier = registerPrioritySleepWakeInterest(phxFdPowerHandler, this);
+        }
+    } else if (v == 0) {
+        if (gFdOn) {
+            r = phxfd::disable(e, &us, &acked);
+            phxFdNoteAck(acked, us);
+            if (r == phxfd::kOk) {
+                gFdOn = 0;
+                gFdOffs++;
+            }
+        }
+        if (!gFdOn && gFdPage) {
+            if (idle) {
+                drop = gFdPage;
+                gFdPage = nullptr;
+                gFdPa = 0;
+            } else {
+                gFdKept++;   // a redirected access may still be in flight: freed at the next 0 or at stop
+                if (r == phxfd::kOk) r = phxfd::kBusy;
+            }
+        }
+    }
+    if (r != phxfd::kOk)
+        gFdLastErr = r;
+    IOLockUnlock(gpuLock);
+    if (drop) { drop->complete(); drop->release(); }
+    if (fresh) { fresh->complete(); fresh->release(); }
+    IOLog("PhxBringup: faultdef %d -> %s (CNTL 0x%08x, page 0x%llx)\n", v, phxfd::resultName(r), rreg(phxfd::kRegCntl), gFdPa);
+    return r == phxfd::kOk ? 0 : r == phxfd::kNoPage ? ENOMEM : r == phxfd::kBusy ? EBUSY : EIO;
+}
+
+// System restart / power-off with the bits on: back to mesboot's values so the hub never redirects into a page the
+// next boot may own. The page stays (stop frees it).
+void PhxBringup::faultDefQuiesce() {
+    if (!mmio || !gpuLock)
+        return;
+    IOLockLock(gpuLock);
+    if (gFdOn) {
+        PhxFdEnv e{this, &PhxBringup::rreg, &PhxBringup::wreg};
+        uint32_t us = 0;
+        bool acked = true;
+        if (phxfd::disable(e, &us, &acked) == phxfd::kOk) {
+            gFdOn = 0;
+            gFdOffs++;
+        }
+    }
+    IOLockUnlock(gpuLock);
+}
+
+int PhxBringup::faultDefStat(char *b, size_t n) {
+    if (!mmio)
+        return snprintf(b, n, "no mmio");
+    const uint32_t cntl = rreg(phxfd::kRegCntl), dlo = rreg(phxfd::kRegDefLo), dhi = rreg(phxfd::kRegDefHi);
+    const uint32_t st = rreg(phxfd::kRegStatus), alo = rreg(phxfd::kRegAddrLo), ahi = rreg(phxfd::kRegAddrHi);
+    const uint32_t grbm = rreg(phxfd::kRegGrbmStatus);
+    bool have = false;
+    uint32_t nd = 0, off = 0xFFFFFFFFu, val = 0;
+    uint64_t pa = 0;
+    if (gpuLock) {
+        IOLockLock(gpuLock);
+        if (gFdPage) {
+            have = true;
+            pa = gFdPage->getPhysicalSegment(0, nullptr, kIOMemoryMapperNone);
+            const volatile uint32_t *p = static_cast<const volatile uint32_t *>(gFdPage->getBytesNoCopy());
+            for (uint32_t o = 0; o < 4096; o += 64)   // drop the CPU's lines: the GPU may have written the page
+                flushLine(reinterpret_cast<const volatile uint8_t *>(p) + o);
+            __asm__ __volatile__("mfence" ::: "memory");
+            nd = phxfd::scanPage(p, gFdFillUsed, &off, &val);
+        }
+        IOLockUnlock(gpuLock);
+    }
+    int o = snprintf(b, n, "faultdef %d last err %d (%s); on %u off %u kept %u; CNTL 0x%08x DEFAULT_ADDR 0x%x_%08x (pa 0x%llx); "
+                     "fault STATUS 0x%08x (VMID %u CID %u RW %u mapping %u perm 0x%x walker %u more %u) ADDR 0x%x_%08x (VA 0x%llx); "
+                     "GRBM_STATUS 0x%08x (GUI_ACTIVE %u); flush ack timeouts %u max %u us; ",
+                     gFdOn, gFdLastErr, phxfd::resultName(gFdLastErr), gFdOns, gFdOffs, gFdKept, cntl, dhi, dlo,
+                     ((static_cast<uint64_t>(dhi & 0xF) << 32) | dlo) << 12,
+                     st, (st >> 20) & 0xF, (st >> 9) & 0x1FF, (st >> 18) & 1, (st >> 8) & 1, (st >> 4) & 0xF, (st >> 1) & 7, st & 1,
+                     ahi, alo, ((static_cast<uint64_t>(ahi & 0xF) << 32) | alo) << 12, grbm, grbm >> 31, gFdAckTimeouts, gFdAckMaxUs);
+    if (o < 0 || static_cast<size_t>(o) >= n)
+        return o;
+    if (!have)
+        o += snprintf(b + o, n - static_cast<size_t>(o), "page none");
+    else if (!nd)
+        o += snprintf(b + o, n - static_cast<size_t>(o), "page pa 0x%llx fill 0x%08x: all 1024 dwords = fill", pa, gFdFillUsed);
+    else
+        o += snprintf(b + o, n - static_cast<size_t>(o), "page pa 0x%llx fill 0x%08x: %u dwords != fill, first at +0x%x = 0x%08x",
+                      pa, gFdFillUsed, nd, off, val);
+    return o;
 }
 
 IOReturn PhxBringup::vmMap(uint32_t handle, uint64_t va, IOMemoryDescriptor *md, uint64_t off, uint64_t size) {
