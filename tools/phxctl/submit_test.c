@@ -20,19 +20,28 @@
 //   submit_test fd3ok                    the no-fault control of fd3: the same shader, the first store into target[2]
 //                                        (mapped). Needs no gate. PASS = fence retired, target[2] = 0xC0FFEE03, the
 //                                        marker. Run it first: it proves a hand-made wave runs on this queue at all.
+//   submit_test fd3 rec [rec_ms=N]      the kext's automatic recovery (b127 debug.phxrecover, RECOVER-AUTO): fd3, then
+//                                        WAITSEQ on until the fence retires or rec_ms (default 10000) passed since the
+//                                        submit, with no register write from here; then QUERY_STATE2 on the context and a
+//                                        harmless second submission (WRITE_DATA 0x5EED0004 into target[3]). PASS = the
+//                                        fence retired, QUERY_STATE2 says RESET | GUILTY (0x5) and the second submission is
+//                                        refused with kIOReturnAborted (0xe00002eb). Also refuses unless debug.phxrecover=1
+//                                        ('force' overrides both gates). Prints debug.phxrecover_stat at the end.
 //   options: va=0x... (the unmapped VA), timeout_ms=N (<= 2000), dry (print the IB, submit nothing), force (submit even
 //            with debug.phxfaultdef off or CNTL not 0x1FFE: the gate-off control run, expected to hang GFX), gfx
 //            (fd3/fd3ok: submit as a GFX IB, the queue of the 11-12 hang, instead of COMPUTE)
 // All print the target dwords, the fence result, the fault STATUS / ADDR / CNTL / DEFAULT_ADDR, GRBM_STATUS polled for
 // GUI_ACTIVE 0 over 1 s, and debug.phxfaultdef_stat before and after. Exit 0 = PASS, 2 = wrong data, 3 = fence not
 // retired, 4 = refused (gate off), 1 = setup error. fd3 exits 2 also when the data is right but STATUS does not show
-// the TCP write fault at the probe page.
+// the TCP write fault at the probe page. fd3 rec: 0 = PASS, 3 = fence not retired within rec_ms, 5 = retired but the
+// context was not reported guilty or its next submission was not refused.
 // build: clang -arch x86_64 -O2 -o submit_test submit_test.c -framework IOKit -framework CoreFoundation
 #include <IOKit/IOKitLib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/sysctl.h>
 #include <assert.h>   // static_assert in PhxNativeABI.h
@@ -108,8 +117,8 @@ static void grbm_poll(void)
 
 int main(int argc, char **argv)
 {
-   int mode = 0, dry = 0, force = 0, gfx = 0, va_set = 0;
-   uint32_t expect = 0xFDFDFDFDu, timeout_ms = 2000;
+   int mode = 0, dry = 0, force = 0, gfx = 0, va_set = 0, rec = 0;
+   uint32_t expect = 0xFDFDFDFDu, timeout_ms = 2000, rec_ms = 10000;
    uint64_t hole = 0x100008100ull;
    for (int i = 1; i < argc; i++) {
       if (!strcmp(argv[i], "fd1")) mode = 1;
@@ -119,12 +128,16 @@ int main(int argc, char **argv)
       else if (!strcmp(argv[i], "gfx")) gfx = 1;
       else if (!strcmp(argv[i], "dry")) dry = 1;
       else if (!strcmp(argv[i], "force")) force = 1;
+      else if (!strcmp(argv[i], "rec")) rec = 1;
+      else if (!strncmp(argv[i], "rec_ms=", 7)) rec_ms = (uint32_t)strtoul(argv[i] + 7, NULL, 0);
       else if (!strncmp(argv[i], "expect=", 7)) expect = (uint32_t)strtoul(argv[i] + 7, NULL, 0);
       else if (!strncmp(argv[i], "va=", 3)) { hole = strtoull(argv[i] + 3, NULL, 0); va_set = 1; }
       else if (!strncmp(argv[i], "timeout_ms=", 11)) timeout_ms = (uint32_t)strtoul(argv[i] + 11, NULL, 0);
-      else { printf("usage: submit_test [fd1|fd2|fd3|fd3ok] [expect=0x..] [va=0x..] [timeout_ms=N] [dry] [force] [gfx]\n"); return 1; }
+      else { printf("usage: submit_test [fd1|fd2|fd3|fd3ok] [expect=0x..] [va=0x..] [timeout_ms=N] [dry] [force] [gfx] [rec] [rec_ms=N]\n"); return 1; }
    }
    if (gfx && mode < 3) { printf("gfx: fd3 / fd3ok only\n"); return 1; }
+   if (rec && mode != 3) { printf("rec: fd3 only\n"); return 1; }
+   if (rec_ms < 1000 || rec_ms > 60000) { printf("rec_ms: 1000-60000\n"); return 1; }
    if (mode == 3 && !va_set) hole = 0x100008140ull;   // FD-3: the leaf and page of fd1/fd2, its own dword (+0x140)
    if (timeout_ms > 2000) timeout_ms = 2000;
    const uint64_t IBVA = 0x100000000ull, TGVA = 0x100010000ull;
@@ -151,6 +164,13 @@ int main(int argc, char **argv)
       if (regs(0x2824, 1, &cntl)) cntl = 0;
       if (mode != 4 && (on != 1 || cntl != 0x1FFEu) && !force && !dry) {
          printf("REFUSED: debug.phxfaultdef=%d CNTL 0x%08x (want 1 / 0x00001ffe); a fault with the gate off is expected to hang GFX. 'force' overrides.\n", on, cntl);
+         return 4;
+      }
+      int ron = 0; size_t rl = sizeof ron;
+      if (sysctlbyname("debug.phxrecover", &ron, &rl, NULL, 0)) ron = -1;
+      if (rec) printf("before: debug.phxrecover=%d\n", ron);
+      if (rec && ron != 1 && !force && !dry) {
+         printf("REFUSED: debug.phxrecover=%d (want 1; -1 = a kext before b127): nothing would recover the hang. 'force' overrides.\n", ron);
          return 4;
       }
    }
@@ -209,6 +229,7 @@ int main(int argc, char **argv)
    req.h.abi = PHXN_ABI_VERSION; req.h.ctx_id = co.op; req.h.num_ibs = 1;
    req.ib[0].va_start = IBVA; req.ib[0].ib_bytes = n * 4; req.ib[0].ip_type = gfx ? PHX_AMDGPU_HW_IP_GFX : PHX_AMDGPU_HW_IP_COMPUTE;
    uint64_t seq = 0; uint32_t sn = 1;
+   const uint64_t t0 = clock_gettime_nsec_np(CLOCK_MONOTONIC);
    kr = IOConnectCallMethod(c, PHXN_SEL_SUBMIT, NULL, 0, &req, sizeof req, &seq, &sn, NULL, NULL);
    printf("submit kr 0x%x seq %llu\n", kr, (unsigned long long)seq);
    if (kr) return 1;
@@ -231,6 +252,50 @@ int main(int argc, char **argv)
    const int regs_ok = !fault_regs("after", hole, st_after);
    grbm_poll();
    stat_line("after", sbuf, sizeof sbuf);
+   if (rec) {   // b127 debug.phxrecover: wait on, write nothing, then check this process is told and refused
+      int done = reached;
+      uint64_t last = wout[1];
+      while (!done && (clock_gettime_nsec_np(CLOCK_MONOTONIC) - t0) / 1000000ull < rec_ms) {
+         uint64_t w2in[3] = {seq, 1000000000ull, 0}, w2out[3] = {0}; uint32_t w2n = 3;
+         kr = IOConnectCallScalarMethod(c, PHXN_SEL_WAITSEQ, w2in, 3, w2out, &w2n);
+         if (kr) { printf("rec: waitseq kr 0x%x\n", kr); break; }
+         done = !w2out[0];
+         last = w2out[1];
+      }
+      const unsigned long long el = (clock_gettime_nsec_np(CLOCK_MONOTONIC) - t0) / 1000000ull;
+      printf("rec: fence %s %llu ms after the submit (retired %llu, seq %llu)\n", done ? "RETIRED" : "NOT retired", el,
+             (unsigned long long)last, (unsigned long long)seq);
+      struct phxn_ctx qi = {PHX_AMDGPU_CTX_OP_QUERY_STATE2, 0, co.op, 0}, qo; size_t qs = sizeof qo;
+      memset(&qo, 0, sizeof qo);
+      const kern_return_t qkr = IOConnectCallStructMethod(c, PHXN_SEL_CTX, &qi, sizeof qi, &qo, &qs);
+      const uint32_t want_flags = PHX_AMDGPU_CTX_QUERY2_FLAGS_RESET | PHX_AMDGPU_CTX_QUERY2_FLAGS_GUILTY;
+      printf("rec: QUERY_STATE2 kr 0x%x flags 0x%x (want 0x%x = RESET | GUILTY)\n", qkr, qo.op, want_flags);
+      // a harmless second submission at IB page +0x400: WRITE_DATA 0x5EED0004 into target[3]
+      uint32_t *q2 = p + 0x100, qn = 0;
+      if (n * 4 > 0x400) { printf("rec: the fd3 IB overlaps +0x400\n"); return 1; }
+      t[3] = 0x5EED5EEDu;
+      q2[qn++] = 0xC0033700; q2[qn++] = 0x00100500; q2[qn++] = (uint32_t)(TGVA + 12); q2[qn++] = (uint32_t)((TGVA + 12) >> 32);
+      q2[qn++] = 0x5EED0004u;
+      req.ib[0].va_start = IBVA + 0x400; req.ib[0].ib_bytes = qn * 4;
+      uint64_t seq2 = 0; uint32_t sn2 = 1;
+      const kern_return_t skr = IOConnectCallMethod(c, PHXN_SEL_SUBMIT, NULL, 0, &req, sizeof req, &seq2, &sn2, NULL, NULL);
+      printf("rec: second submit kr 0x%x (want 0xe00002eb kIOReturnAborted)%s\n", skr, skr ? "" : ": ACCEPTED");
+      if (!skr) {
+         uint64_t w3in[3] = {seq2, 2000000000ull, 0}, w3out[3] = {0}; uint32_t w3n = 3;
+         kr = IOConnectCallScalarMethod(c, PHXN_SEL_WAITSEQ, w3in, 3, w3out, &w3n);
+         printf("rec: second submit seq %llu waitseq kr 0x%x pending %llu, target[3] = 0x%08x\n", (unsigned long long)seq2, kr,
+                (unsigned long long)w3out[0], t[3]);
+      }
+      fault_regs("rec after", hole, NULL);
+      char rbuf[2048]; size_t rlen = sizeof rbuf;
+      if (sysctlbyname("debug.phxrecover_stat", rbuf, &rlen, NULL, 0)) snprintf(rbuf, sizeof rbuf, "(no debug.phxrecover_stat: kext before b127?)");
+      printf("rec: debug.phxrecover_stat:\n%s\n", rbuf);
+      const int told = !qkr && qo.op == want_flags, refused = skr == (kern_return_t)0xe00002ebu;
+      printf("RESULT: %s (fence %s in %llu ms, context %s, next submission %s)\n", done && told && refused ? "PASS" : "FAIL",
+             done ? "retired" : "NOT retired", el, told ? "reported guilty" : "NOT reported guilty",
+             refused ? "refused" : "NOT refused");
+      return !done ? 3 : told && refused ? 0 : 5;
+   }
    if (!reached) { printf("RESULT: FAIL (fence not retired within %u ms)\n", timeout_ms); return 3; }
    if (mode == 4) {
       const int ok = t[1] == FD3_MARKER && t[2] == FD3_VALUE && t[0] == 0x5EED5EEDu;

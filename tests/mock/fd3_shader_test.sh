@@ -3,7 +3,8 @@
 # fd3_shader_test.sh: host test of submit_test fd3 / fd3ok (tools/phxctl/fd3_shader.h, H-FAULTDEF FD-3). NO hardware.
 # 1) fd3_shader_test.c: LLVM golden encodings, an independent disassembly of the shader, a PM4 walk of the IB.
 # 2) submit_test.c builds warning-free and wires the modes: fd3 gated like fd1/fd2, fd3ok not, the shader at IB +0x800,
-#    the default probe VA 0x100008140. 3) Mutations of the header, each must be CAUGHT.
+#    the default probe VA 0x100008140; fd3 rec (b127) gated by debug.phxrecover, no register write, a harmless resubmit.
+# 3) Mutations of the header, each must be CAUGHT.
 # Exit 0 iff all pass.   bash tests/mock/fd3_shader_test.sh
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd); TOOLS=${FD3_TOOLS:-$HERE/../../tools/phxctl}
@@ -28,6 +29,13 @@ ok fd3_default_va 'grep -q "if (mode == 3 && !va_set) hole = 0x100008140ull;" "$
 ok shader_in_ib_page 'grep -q "SHVA = IBVA + 0x800" "$ST" && grep -q "uint32_t \*sh = p + 0x200" "$ST"'
 ok fd3_needs_status 'grep -q "st_ok = regs_ok && cid == 8 && rw == 1 && vmid >= 8 && fva == (hole & ~0xFFFull)" "$ST"'
 ok timeout_capped 'grep -q "if (timeout_ms > 2000) timeout_ms = 2000;" "$ST"'
+# fd3 rec (kext b127 debug.phxrecover): gated by debug.phxrecover too, fd3 only, writes no register, the second
+# submission is a WRITE_DATA into the mapped target (never the unmapped VA), PASS needs RESET | GUILTY and kIOReturnAborted
+ok rec_fd3_only 'grep -q "if (rec && mode != 3) { printf(\"rec: fd3 only" "$ST"'
+ok rec_gated 'grep -q "if (rec && ron != 1 && !force && !dry)" "$ST"'
+ok rec_no_register_write '! grep -q "DBG_WRITE_REG\|wreg" "$ST"'
+ok rec_second_harmless 'grep -q "q2\[qn++\] = (uint32_t)(TGVA + 12);" "$ST" && grep -q "req.ib\[0\].va_start = IBVA + 0x400;" "$ST"'
+ok rec_pass_needs_both 'grep -q "const int told = !qkr && qo.op == want_flags, refused = skr == (kern_return_t)0xe00002ebu;" "$ST" && grep -q "return !done ? 3 : told && refused ? 0 : 5;" "$ST"'
 
 # 3. mutations of the header: each must make the unit test fail
 mut() {   # mut <name> <perl substitution>

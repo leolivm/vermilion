@@ -35,7 +35,7 @@ PAR=1 bash relight_mut.sh      # any runner / suite: PAR = how many at once (def
 bash b15diff.sh OLD NEW [VAR=v] # decision diff of two b15_boot.sh versions over every b15test.sh scenario (logs, calls, writes, stub call counters)
 bash phxctl_serve_test.sh      # host test of `phxctl serve` (the read server; no kext needed: register items answer empty, sysctl items real) (9/9)
 bash faultdef_test.sh          # FD-0: debug.phxfaultdef (kext b126, PhxFaultDef.h) write order, CNTL 0x2 -> 0x1FFE, refusals, teardown, never MMHUB; glue source checks; 8 header mutations CAUGHT
-bash fd3_shader_test.sh      # FD-3: submit_test fd3 / fd3ok gfx11 shader + IB (tools/phxctl/fd3_shader.h): LLVM golden encodings, independent disassembly, PM4 walk, submit_test wiring; 12 header mutations CAUGHT
+bash fd3_shader_test.sh      # FD-3: submit_test fd3 / fd3ok gfx11 shader + IB (tools/phxctl/fd3_shader.h): LLVM golden encodings, independent disassembly, PM4 walk, submit_test wiring (+ fd3 rec, b127); 12 header mutations CAUGHT
 bash recover_test.sh         # b127 debug.phxrecover (src/vermilion-boot/PhxRecover.h): STATUS decode, kill value per VMID, stall clock, stalled-head ownership, decision (refused with phxfaultdef off, only the VMID STATUS names), 1 ms x 10 kill loop, CNTL clear pulse, never MMHUB; glue source checks (poll in every lock-free wait, never under gpuLock, lost context refused); 21 header mutations CAUGHT
 ./run.sh -k                    # keep the work dirs (to debug a FAIL)
 ./run.sh happy user_logged     # only the named scenarios
